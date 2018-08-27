@@ -1,4 +1,5 @@
 import operator as op
+import statistics as st
 
 import numpy as np
 
@@ -55,6 +56,11 @@ class BipartiteMatcher:
         self.right = np.array([Vertex(right[r], r) for r in range(len(right))])
         self.filter_on_left = None
         self.filter_on_right = None
+        self.prefs_min = None
+        self.prefs_max = None
+        self.prefs_mean = None
+        self.prefs_std = None
+        self.prefs_qtiles = None
         if filter_class is not None:
             # filter_on_left is used to filter left-side candidates,
             # thus should be queried with a right vertex (and vice-versa)
@@ -104,6 +110,7 @@ class BipartiteMatcher:
 
         :param h_fn: see Vertex.set_prefs
         """
+        prefs_len = []
         for these, those, filter_on_them in \
                 zip([self.left, self.right],
                     [self.right, self.left],
@@ -112,9 +119,16 @@ class BipartiteMatcher:
                 if filter_on_them is not None:
                     filtrd_idxs = filter_on_them(this.label)
                     them = those[filtrd_idxs]
+                    prefs_len.append(len(them))
                 else:
                     them = those
                 this.set_prefs(them, h_fn)
+        if self.filter_on_left is not None or self.filter_on_right is not None:
+            self.prefs_min = min(prefs_len)
+            self.prefs_max = max(prefs_len)
+            self.prefs_mean = st.mean(prefs_len)
+            self.prefs_std = st.pstdev(prefs_len, self.prefs_mean)
+            self.prefs_qtiles = np.percentile(prefs_len, [25, 50, 75])
 
     def restore_prefs(self):
         for u in self.left:
