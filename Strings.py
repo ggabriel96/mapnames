@@ -23,6 +23,7 @@ def diff_view(str1, str2):
     # was using negative indexing,
     # I just think this way is better understandable
     while suffix_len < len_limit \
+            and len_limit - suffix_len > prefix_len \
             and str1[m - 1 - suffix_len] == str2[n - 1 - suffix_len]:
         suffix_len += 1
     return prefix_len, suffix_len
