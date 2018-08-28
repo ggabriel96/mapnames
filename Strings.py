@@ -42,7 +42,64 @@ def trim_both_equal(str1, str2):
     return str1[begin:-end], str2[begin:-end]
 
 
-def wagner_fischer(str1, str2, trim=False):
+def print_trace(str1, str2, trace):
+    """ Prints the sequence of edit operations performed by wagner_fischer()
+    to transform str1 into str2.
+
+    Indicates deletion with '-', insertion with '+' and change with '.'.
+
+    :param str1: a string
+    :param str2: the string that str1 was compared to
+    :param trace: the trace obtained from wf_trace()
+    """
+    print(f'str1: {str1}')
+    print('      ', end='')
+    for op in trace[::-1]:
+        if op == -1:
+            print('-', end='')
+        elif op == +1:
+            print('+', end='')
+        else:
+            print(f'.', end='')
+    print(f'\nstr2: {str2}')
+
+
+def wf_trace(D, str1, str2):
+    """ Gets the list of operations performed by wagner_fischer().
+
+    :param D: the memo matrix D used in wagner_fischer()
+    :param str1: a string
+    :param str2: the string that str1 was compared to
+    :return: a list of -1, 0, +1 indicating insert, change, delete (from end to
+             beginning of a and str2)
+    """
+    trace = []
+    i, j = len(str1), len(str2)
+    while i > 0 and j > 0:
+        if D[i][j] == D[i - 1][j] + 1:
+            trace.append(-1)
+            i -= 1
+        elif D[i][j] == D[i][j - 1] + 1:
+            trace.append(+1)
+            j -= 1
+        else:
+            trace.append(0)
+            i -= 1
+            j -= 1
+    return trace
+
+
+def wagner_fischer(str1, str2, trim=False, with_trace=False):
+    """ Calculates the edit distance from str1 to str2.
+
+    :param str1: a string
+    :param str2: a string to compare str1 to
+    :param trim: if should remove equal prefix and suffix between str1 and str2
+    :param with_trace: if should also return the sequence of performed
+                       operations
+    :return: the edit distance and the sequence of performed operations
+             if with_trace = True
+    """
     if trim:
         a, b = trim_both_equal(str1, str2)
     else:
@@ -60,14 +117,19 @@ def wagner_fischer(str1, str2, trim=False):
     for i in np.arange(1, m + 1):
         for j in np.arange(1, n + 1):
             # Change operation
-            cost1 = D[i - 1][j - 1] + int(a[i - 1] != b[j - 1])
+            change_cost = D[i - 1][j - 1] + int(a[i - 1] != b[j - 1])
             # Minimum of deletion and insertion operations
             # Deletion means cost of transforming str1[0..i-1]
             # to str2[0..j] and deleting str1[i]
             # Insertion means cost of transforming str1[0..i]
             # to str2[0..j-1] and inserting str2[j]
-            cost2 = np.minimum(D[i - 1][j] + 1, D[i][j - 1] + 1)
-            D[i][j] = np.minimum(cost1, cost2)
+            delete_cost = D[i - 1][j] + 1
+            insert_cost = D[i][j - 1] + 1
+            d_or_i_cost = np.minimum(delete_cost, insert_cost)
+            D[i][j] = np.minimum(change_cost, d_or_i_cost)
     # [-1][-1] is the last column of the last row, which holds the edit
     # distance of the whole str1 and str2 strings
-    return D[-1][-1]
+    trace = None
+    if with_trace:
+        trace = wf_trace(D, a, b)
+    return D[-1][-1], trace
