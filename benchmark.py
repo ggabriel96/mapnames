@@ -42,11 +42,13 @@ def assignment_bench(json_dict):
     time_end_prefs = time()
     assignment = pywrapgraph.LinearSumAssignment()
 
-    for these in [matcher.left, matcher.right]:
-        for this in these:
-            for rating in this.ratings:
-                assignment.AddArcWithCost(this.idx, rating[0].idx,
-                                          int(rating[1]))
+    for l in matcher.left:
+        for r, cost in l.ratings:
+            assignment.AddArcWithCost(l.idx, r.idx, int(cost))
+
+    for r in matcher.right:
+        for l, cost in r.ratings:
+            assignment.AddArcWithCost(l.idx, r.idx, int(cost))
 
     solve_status = assignment.Solve()
     time_end = time()
@@ -77,6 +79,8 @@ def assignment_bench(json_dict):
           f' ({prefs_time / 60} minutes)')
     print(f'Total run time: {total_time} seconds'
           f' ({total_time / 60} minutes)')
+    print(matcher.prefs_min, matcher.prefs_max,
+          matcher.prefs_mean, matcher.prefs_std, matcher.prefs_qtiles)
 
     return {
         'total_time': total_time,
