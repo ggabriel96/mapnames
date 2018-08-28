@@ -140,4 +140,5 @@ class BipartiteMatcher:
 # Did not put on Vertex class because
 # this is too non-standard for graphs
 def vertex_diff(u, v):
-    return wagner_fischer(u.label, v.label, True)
+    ed, _ = wagner_fischer(u.label, v.label, True)
+    return ed
