@@ -34,12 +34,13 @@ class SuffixArray:
             cmp = op.ge
         else:
             cmp = op.gt
+        strlen = len(string)
         lo, hi = 0, len(self.suffixes) - 1
         while lo < hi:
             mid = int(lo + (hi - lo) / 2)
             suffix = self.suffixes[mid][0]
             # print(lo, mid, hi, suffix)
-            if cmp(suffix[:len(string)], string):
+            if cmp(suffix[:strlen], string):
                 hi = mid
             else:
                 lo = mid + 1
@@ -47,7 +48,7 @@ class SuffixArray:
         # last suffix is not equal to the query string,
         # then decrease upper bound (should we?)
         if not lower:
-            if self.suffixes[hi][0][:len(string)] != string:
+            if self.suffixes[hi][0][:strlen] != string:
                 hi -= 1
         return lo if lower else hi
 
