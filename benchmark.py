@@ -2,34 +2,41 @@ import argparse
 import json
 from time import time
 
-from ortools.graph import pywrapgraph
+from ortools.graph import pywrapgraph as ortg
 
 import Graph
 from SuffixArray import SuffixArray
 
 
-def accuracy_marriage(matching, original_mapping):
-    errors = []
-    equal_amount = 0
-    for k, v in matching.items():
-        is_equal = v.label == original_mapping[k.label]
-        equal_amount += int(is_equal)
-        if not is_equal:
-            errors.append(k)
-    return equal_amount / len(matching), errors
+def report_flow(matcher, json_dict):
+    acc, errs = None, None
+    if matcher.solve_status == ortg.SimpleMinCostFlow.OPTIMAL:
+        acc, errs = matcher.accuracy(json_dict)
+        for arc in errs:
+            l, r = matcher.endpoints(arc)
+            print('----------------------> %s\n'
+                  '  got mapped to       : %s\n'
+                  '  but should have been: %s\n'
+                  '  Cost = %d' % (
+                      matcher.left[l].label,
+                      matcher.right[r].label,
+                      json_dict[matcher.left[l].label],
+                      matcher.flow.UnitCost(arc)))
+        print(f'{len(errs)} wrong assignments')
+        print('Accuracy:', acc)
+        print('Total cost:', matcher.flow.OptimalCost())
 
-
-def accuracy_assignment(assignment, bipartite_matcher, original_mapping):
-    errors = []
-    equal_amount = 0
-    for l in range(assignment.NumNodes()):
-        r = assignment.RightMate(l)
-        is_equal = bipartite_matcher.right[r].label == \
-                   original_mapping[bipartite_matcher.left[l].label]
-        equal_amount += int(is_equal)
-        if not is_equal:
-            errors.append(l)
-    return equal_amount / assignment.NumNodes(), errors
+    print(f'Status: {matcher.solve_status} of\n'
+          f'        {ortg.SimpleMinCostFlow.NOT_SOLVED}: not solved,\n'
+          f'        {ortg.SimpleMinCostFlow.OPTIMAL}: optimal,\n'
+          f'        {ortg.SimpleMinCostFlow.FEASIBLE}: feasible,\n'
+          f'        {ortg.SimpleMinCostFlow.INFEASIBLE}: infeasible,\n'
+          f'        {ortg.SimpleMinCostFlow.UNBALANCED}: unbalanced,\n'
+          f'        {ortg.SimpleMinCostFlow.BAD_RESULT}: bad result,\n'
+          f'        {ortg.SimpleMinCostFlow.BAD_COST_RANGE}: bad cost range')
+    print('Preferences statistics:', matcher.prefs_min, matcher.prefs_max,
+          matcher.prefs_mean, matcher.prefs_std, matcher.prefs_qtiles)
+    return acc, errs
 
 
 def assignment_bench(json_dict):
@@ -37,50 +44,17 @@ def assignment_bench(json_dict):
     values = list(json_dict.values())
 
     matcher = Graph.BipartiteMatcher(keys, values, SuffixArray)
+
     time_init = time()
     matcher.set_prefs(Graph.vertex_diff)
     time_end_prefs = time()
-    assignment = pywrapgraph.LinearSumAssignment()
-
-    for l in matcher.left:
-        for r, cost in l.ratings:
-            assignment.AddArcWithCost(l.idx, r.idx, int(cost))
-
-    for r in matcher.right:
-        for l, cost in r.ratings:
-            assignment.AddArcWithCost(l.idx, r.idx, int(cost))
-
-    solve_status = assignment.Solve()
+    matcher.min_cost_flow()
     time_end = time()
 
     prefs_time = time_end_prefs - time_init
     total_time = time_end - time_init
-    acc, errs = 0, []
-    if solve_status == assignment.OPTIMAL:
-        acc, errs = accuracy_assignment(assignment, matcher, json_dict)
-        for i in errs:
-            print('----------------------> %s\n'
-                  '  got mapped to       : %s\n'
-                  '  but should have been: %s\n'
-                  '  Cost = %d' % (
-                      matcher.left[i],
-                      matcher.right[assignment.RightMate(i)],
-                      matcher.right[i],
-                      assignment.AssignmentCost(i)))
-        print(f'{len(errs)} wrong assignments')
-        print('Accuracy:', acc)
-        print('Total cost:', assignment.OptimalCost())
-    elif solve_status == assignment.INFEASIBLE:
-        print('No assignment is possible.')
-    elif solve_status == assignment.POSSIBLE_OVERFLOW:
-        print(
-            'Some input costs are too large and may cause an integer overflow.')
-    print(f'Preferences run time: {prefs_time} seconds'
-          f' ({prefs_time / 60} minutes)')
-    print(f'Total run time: {total_time} seconds'
-          f' ({total_time / 60} minutes)')
-    print(matcher.prefs_min, matcher.prefs_max,
-          matcher.prefs_mean, matcher.prefs_std, matcher.prefs_qtiles)
+
+    acc, errs = report_flow(matcher, json_dict)
 
     return {
         'total_time': total_time,
@@ -99,15 +73,14 @@ def benchmark(json_dict):
     time_init = time()
     G.set_prefs(Graph.vertex_diff)
     time_end_prefs = time()
-    matching = G.stable_match()
+    G.stable_match()
     time_end = time()
 
     prefs_time = time_end_prefs - time_init
     total_time = time_end - time_init
-    acc, errs = accuracy_marriage(matching, json_dict)
+    acc, errs = G.accuracy(json_dict)
 
     return {
-        'matching': matching,
         'total_time': total_time,
         'preferences_time': prefs_time,
         'accuracy': acc,
@@ -128,6 +101,13 @@ def main():
 
     size = len(input_dict)
     rslts = assignment_bench(input_dict)
+
+    total_time = rslts['total_time']
+    prefs_time = rslts['preferences_time']
+    print(f'Preferences run time: {prefs_time} seconds'
+          f' ({prefs_time / 60} minutes)')
+    print(f'Total run time: {total_time} seconds'
+          f' ({total_time / 60} minutes)')
 
     paths = args.json.split('/')
     filename = paths[-1]
