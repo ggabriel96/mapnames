@@ -1,3 +1,5 @@
+from collections import Counter
+
 import numpy as np
 
 
@@ -133,3 +135,16 @@ def wagner_fischer(str1, str2, trim=False, with_trace=False):
     if with_trace:
         trace = wf_trace(D, a, b)
     return D[-1][-1], trace
+
+
+def qprofile(string, q):
+    n = len(string)
+    qgrams = [string[i:i + q] for i in range(n - q + 1)]
+    return Counter(qgrams)
+
+
+def qdistance(str1, str2, q):
+    profile1 = qprofile(str1, q)
+    profile2 = qprofile(str2, q)
+    profile1.subtract(profile2)
+    return sum((abs(count) for count in profile1.values()))
