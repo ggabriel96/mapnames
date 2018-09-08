@@ -4,7 +4,7 @@ This is the repository for the code of my Computer Science bachelor's degree fin
 
 # Getting started
 
-Currently, the most up-to-date branch is `filtering`. Dependencies can be installed via:
+Dependencies can be installed via:
 
 ```bash
 pip install -r requirements.txt
