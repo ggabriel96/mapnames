@@ -1,5 +1,6 @@
 import operator as op
 import statistics as st
+from abc import ABC, abstractmethod
 
 import numpy as np
 from ortools.graph import pywrapgraph as ortg
@@ -15,27 +16,34 @@ class Vertex:
         self.prefs = None
         self.ratings = None
 
-    def set_prefs(self, others, h_fn, sort=False, ref_only=False):
-        """ Sets the preference list of this vertex according to the results of
+    def set_ratings(self, others, h_fn, sort=False, also_prefs=False):
+        """ Sets the rating list of this vertex according to the results of
         h_fn.
 
-        :param others: set of other vertices to compute preference list against
+        :param others: set of other vertices to compute rating list against
         :param h_fn: must be a function accepting two vertices and returning
-        an integer that describes how closely related these two vertices are.
-        In this case, the function will be called with self and another
-        vertex in others. The integers will be used to sort the preference
-        list. They need not be the final vertex position.
-        :param sort: if the preference list should be sorted at the end
-        :param ref_only: if the preference list should be left with only
-        references to vertices instead of (vertex reference, h_fn result)
+                     an integer that describes how closely related these two
+                     vertices are. The function will be called with self and
+                     another vertex in others. The integers will be used to
+                     sort the list, if asked. They need not be the final
+                     vertex position.
+        :param sort: if the rating list should be sorted at the end
+        :param also_prefs: if the preference list should be set at the end (will
+                           also sort the ratings before actually setting prefs).
         """
         self.ratings = [(other, h_fn(self, other)) for other in others]
-        if sort:
+        if sort or also_prefs:
             self.ratings.sort(key=op.itemgetter(1))
-        if ref_only:
+        if also_prefs:
             self.restore_prefs()
 
     def restore_prefs(self):
+        """ Set self.prefs based on self.ratings.
+
+        Will make self.prefs store only the reference to the vertices, making
+        it a "real" preference list. Mainly for stable marriage or algorithms
+        that alter the preference lists during their execution.
+        """
         self.prefs = [other for (other, _) in self.ratings]
 
     def __str__(self):
@@ -45,25 +53,140 @@ class Vertex:
         return self.__str__()
 
 
-class BipartiteMatcher:
+class BipartiteMatcher(ABC):
+    @abstractmethod
+    def match(self):
+        """ Run the matching implemented """
+        pass
+
+    @abstractmethod
+    def set_prefs(self, h_fn):
+        """ Set the necessary preference lists according to h_fn.
+
+        See Vertex.set_ratings() for more details regarding h_fn.
+        """
+        pass
+
+    @abstractmethod
+    def accuracy(self, correct_mapping):
+        """ Computes the achieved accuracy and the list of mismatches.
+
+        :param correct_mapping: a dict holding the correct mapping
+        :return a tuple of (accuracy, list of mismatches). The accuracy must be
+                between 0.0 and 1.0. The elements of the list may vary per
+                implementation.
+        """
+        pass
+
+
+class StableMatcher(BipartiteMatcher):
+    def __init__(self, left, right):
+        """
+        :param left: left set of elements
+        :param right: right set of elements
+        """
+        self.n = len(left)
+
+        # holds the result of self.match()
+        self.assignment = None
+
+        self.left = np.array([Vertex(left[l], l) for l in range(len(left))])
+        self.right = np.array([Vertex(right[r], r) for r in range(len(right))])
+
+    def match(self):
+        """ Run Irving's weakly-stable marriage algorithm.
+
+        It is Irving's extension to Gale-Shapley's. Must be called after a call
+        to self.set_ratings(also_prefs=True) and will ruin the preference lists
+        (they can be restored with self.restore_prefs()). Stores its result in
+        self.assignment.
+        """
+        husband = {}
+        self.assignment = {}
+        # preferences list will get screwed...
+        free_men = set(self.left)
+        while len(free_men) > 0:
+            m = free_men.pop()
+            w = m.prefs[0]
+
+            # if some man h is engaged to w,
+            # set him free
+            h = husband.get(w)
+            if h is not None:
+                del self.assignment[h]
+                free_men.add(h)
+
+            # m engages w
+            self.assignment[m] = w
+            husband[w] = m
+
+            # for each successor m' of m on w's preferences,
+            # remove w from m's preferences so that no man
+            # less desirable than m will propose w
+            succ_index = w.prefs.index(m) + 1
+            for i in range(succ_index, len(w.prefs)):
+                successor = w.prefs[i]
+                successor.prefs.remove(w)
+            # and delete all m' from w so we won't attempt
+            # to remove w from their list more than once
+            del w.prefs[succ_index:]
+
+    def set_prefs(self, h_fn):
+        """ Sets the preference list for all vertices in the left set against
+        all in the right, and all in the right set against all in the left.
+
+        :param h_fn: see Vertex.set_ratings()
+        """
+        for l in self.left:
+            l.set_ratings(self.right, h_fn, also_prefs=True)
+        for r in self.right:
+            r.set_ratings(self.left, h_fn, also_prefs=True)
+
+    def restore_prefs(self):
+        for l in self.left:
+            l.restore_prefs()
+        for r in self.right:
+            r.restore_prefs()
+
+    def accuracy(self, correct_mapping):
+        """ Computes the achieved accuracy and the list of mismatches.
+
+        :param correct_mapping: a dict holding the correct mapping
+        :return: a tuple of (accuracy, list of mismatched Vertex elements
+                 from self.left)
+        """
+        errors = []
+        equal_amount = 0
+        for l, r in self.assignment.items():
+            is_equal = r.label == correct_mapping[l.label]
+            if is_equal:
+                equal_amount += 1
+            else:
+                errors.append(l)
+        return equal_amount / len(self.assignment), errors
+
+
+class MinCostFlow(BipartiteMatcher):
     def __init__(self, left, right, filter_class=None):
         """
         :param left: left set of elements
         :param right: right set of elements
-        :param filter_class: a callable Suffix Tree-like class to build
-               filters for left and right sets. Upon called with a string, must
-               return a list of indexes of candidates to compare to that string.
-               self.stable_match won't work if a filter is provided.
+        :param filter_class: a callable class to build filters for left and
+                             right sets (so the constructor will be called with
+                             them). Upon called with a string, must return a
+                             list of indexes of candidates to compare to that
+                             string.
         """
         self.n = len(left)
 
-        self.flow = None
+        self.flow = ortg.SimpleMinCostFlow()
         self.solve_status = None
-        self.source, self.sink = None, None
-        self.l_idx_shift, self.r_idx_shift = 0, 0
+        self.source, self.sink = 0, 2 * self.n + 1
+        # numbering shift required by Google's library
+        self.l_idx_shift, self.r_idx_shift = 1, self.n + 1
 
-        self.marriage = None
-
+        # preference statistics computed on self.set_prefs
+        # if a filter was provided
         self.prefs_min = None
         self.prefs_max = None
         self.prefs_mean = None
@@ -73,8 +196,6 @@ class BipartiteMatcher:
         self.filter_on_left = None
         self.filter_on_right = None
         if filter_class is not None:
-            self.source, self.sink = 0, 2 * self.n + 1
-            self.l_idx_shift, self.r_idx_shift = 1, self.n + 1
             # filter_on_left is used to filter left-side candidates,
             # thus should be queried with a right vertex (and vice-versa)
             self.filter_on_left = filter_class(left)
@@ -85,10 +206,8 @@ class BipartiteMatcher:
         self.right = np.array([Vertex(right[r], r + self.r_idx_shift)
                                for r in range(len(right))])
 
-    def min_cost_flow(self):
-        """ Builds pywrapgraph.SimpleMinCostFlow and calls Solve() """
-        self.flow = ortg.SimpleMinCostFlow()
-
+    def match(self):
+        """ Calls self.flow.Solve() """
         # arcs from source to all left v
         for l in self.left:
             self.flow.AddArcWithCapacityAndUnitCost(tail=self.source,
@@ -132,45 +251,11 @@ class BipartiteMatcher:
         r = self.flow.Head(arc) - self.r_idx_shift
         return l, r
 
-    def stable_match(self):
-        """ Run Irving's weakly-stable marriage algorithm.
-
-        It is Irving's extension to Gale-Shapley's. Requires self to hold a
-        complete bipartite graph (i.e., full preference lists).
-        """
-        husband = {}
-        self.marriage = {}
-        # preferences list will get screwed...
-        free_men = set(self.left)
-        while len(free_men) > 0:
-            m = free_men.pop()
-            w = m.prefs[0]
-
-            # if some man h is engaged to w,
-            # set him free
-            h = husband.get(w)
-            if h is not None:
-                del self.marriage[h]
-                free_men.add(h)
-
-            # m engages w
-            self.marriage[m] = w
-            husband[w] = m
-
-            # for each successor m' of m on w's preferences,
-            # remove w from m's preferences so that no man
-            # less desirable than m will propose w
-            succ_index = w.prefs.index(m) + 1
-            for i in range(succ_index, len(w.prefs)):
-                successor = w.prefs[i]
-                successor.prefs.remove(w)
-            # and delete all m' from w so we won't attempt
-            # to remove w from their list more than once
-            del w.prefs[succ_index:]
-
     def set_prefs(self, h_fn):
         """ Sets the preference list for all vertices in the left set against
         all in the right, and all in the right set against all in the left.
+
+        Shows a progress-bar for each of the two runs.
 
         :param h_fn: see Vertex.set_prefs
         """
@@ -186,7 +271,7 @@ class BipartiteMatcher:
                     prefs_len.append(len(them))
                 else:
                     them = those
-                this.set_prefs(them, h_fn)
+                this.set_ratings(them, h_fn)
         if self.filter_on_left is not None or self.filter_on_right is not None:
             self.prefs_min = min(prefs_len)
             self.prefs_max = max(prefs_len)
@@ -194,29 +279,12 @@ class BipartiteMatcher:
             self.prefs_std = st.pstdev(prefs_len, self.prefs_mean)
             self.prefs_qtiles = np.percentile(prefs_len, [25, 50, 75])
 
-    def restore_prefs(self):
-        for u in self.left:
-            u.restore_prefs()
-        for v in self.right:
-            v.restore_prefs()
-
     def accuracy(self, correct_mapping):
-        if self.marriage is not None:
-            return self.__accuracy_marriage(correct_mapping)
-        return self.__accuracy_min_cost_flow(correct_mapping)
+        """ Computes the achieved accuracy and the list of mismatches.
 
-    def __accuracy_marriage(self, correct_mapping):
-        errors = []
-        equal_amount = 0
-        for man, woman in self.marriage.items():
-            is_equal = woman.label == correct_mapping[man.label]
-            if is_equal:
-                equal_amount += 1
-            else:
-                errors.append(man)
-        return equal_amount / len(self.marriage), errors
-
-    def __accuracy_min_cost_flow(self, correct_mapping):
+        :param correct_mapping: a dict holding the correct mapping
+        :return: a tuple of (accuracy, list of mismatched arcs)
+        """
         errors = []
         equal_amount = 0
         for arc in range(self.flow.NumArcs()):

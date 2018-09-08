@@ -43,12 +43,12 @@ def assignment_bench(json_dict):
     keys = list(json_dict.keys())
     values = list(json_dict.values())
 
-    matcher = Graph.BipartiteMatcher(keys, values, SuffixArray)
+    matcher = Graph.MinCostFlow(keys, values, SuffixArray)
 
     time_init = time()
     matcher.set_prefs(Graph.vertex_diff)
     time_end_prefs = time()
-    matcher.min_cost_flow()
+    matcher.match()
     time_end = time()
 
     prefs_time = time_end_prefs - time_init
@@ -68,17 +68,17 @@ def benchmark(json_dict):
     keys = list(json_dict.keys())
     values = list(json_dict.values())
 
-    G = Graph.BipartiteMatcher(keys, values)
+    matcher = Graph.StableMatcher(keys, values)
 
     time_init = time()
-    G.set_prefs(Graph.vertex_diff)
+    matcher.set_prefs(Graph.vertex_diff)
     time_end_prefs = time()
-    G.stable_match()
+    matcher.match()
     time_end = time()
 
     prefs_time = time_end_prefs - time_init
     total_time = time_end - time_init
-    acc, errs = G.accuracy(json_dict)
+    acc, errs = matcher.accuracy(json_dict)
 
     return {
         'total_time': total_time,
@@ -109,21 +109,21 @@ def main():
     print(f'Total run time: {total_time} seconds'
           f' ({total_time / 60} minutes)')
 
-    paths = args.json.split('/')
-    filename = paths[-1]
-    for label, value in \
-            zip(['sec', 'acc'], [rslts['total_time'], rslts['accuracy']]):
-        output_path = f'{args.outdir}/{filename}_{label}.csv'
-        if args.reset:
-            with open(output_path, 'w') as out_file:
-                print('x, y', file=out_file)
-        output(output_path, size, value)
+    if args.outdir:
+        filename = args.json.split('/')[-1]
+        for label, value in zip(['sec', 'acc'],
+                                [rslts['total_time'], rslts['accuracy']]):
+            output_path = f'{args.outdir}/{filename}_{label}.csv'
+            if args.reset:
+                with open(output_path, 'w') as out_file:
+                    print('x, y', file=out_file)
+            output(output_path, size, value)
 
 
 if __name__ == '__main__':
     argp = argparse.ArgumentParser()
     argp.add_argument('json', type=str, help='path to .json input file')
-    argp.add_argument('outdir', type=str,
+    argp.add_argument('-o', '--outdir', type=str,
                       help='directory to output time and accuracy as files')
     argp.add_argument('-r', '--reset', action='store_true',
                       help='reset file before output')
