@@ -305,17 +305,18 @@ class MinCostFlow(FilteredBipartiteMatcher):
         """
         errors = []
         equal_amount = 0
-        for arc in range(self.flow.NumArcs()):
-            if self.flow.Tail(arc) != self.source \
-                    and self.flow.Head(arc) != self.sink \
-                    and self.flow.Flow(arc) > 0:
-                l, r = self.endpoints(arc)
-                is_equal = self.right[r].label == \
-                           correct_mapping[self.left[l].label]
-                if is_equal:
-                    equal_amount += 1
-                else:
-                    errors.append(arc)
+        if self.solve_status == ortg.SimpleMinCostFlow.OPTIMAL:
+            for arc in range(self.flow.NumArcs()):
+                if self.flow.Tail(arc) != self.source \
+                        and self.flow.Head(arc) != self.sink \
+                        and self.flow.Flow(arc) > 0:
+                    l, r = self.endpoints(arc)
+                    is_equal = self.right[r].label == \
+                               correct_mapping[self.left[l].label]
+                    if is_equal:
+                        equal_amount += 1
+                    else:
+                        errors.append(arc)
         return equal_amount / self.n, errors
 
 
