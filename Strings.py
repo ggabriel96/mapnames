@@ -137,6 +137,11 @@ def wagner_fischer(str1, str2, trim=False, with_trace=False):
     return D[-1][-1], trace
 
 
+def edit_distance(str1, str2, trim=False, with_trace=False):
+    dist, _ = wagner_fischer(str1, str2, trim, with_trace)
+    return dist
+
+
 def qprofile(string, q):
     n = len(string)
     qgrams = [string[i:i + q] for i in range(n - q + 1)]

@@ -1,17 +1,18 @@
 import argparse
 import json
+from functools import partial
+from random import sample
 from time import time
 
 from ortools.graph import pywrapgraph as ortg
 
 import Graph
+import Strings
 from SuffixArray import SuffixArray
 
 
-def report_flow(matcher, json_dict):
-    acc, errs = None, None
+def report_flow(matcher, json_dict, errs):
     if matcher.solve_status == ortg.SimpleMinCostFlow.OPTIMAL:
-        acc, errs = matcher.accuracy(json_dict)
         for arc in errs:
             l, r = matcher.endpoints(arc)
             print('----------------------> %s\n'
@@ -22,8 +23,6 @@ def report_flow(matcher, json_dict):
                       matcher.right[r].label,
                       json_dict[matcher.left[l].label],
                       matcher.flow.UnitCost(arc)))
-        print(f'{len(errs)} wrong assignments')
-        print('Accuracy:', acc)
         print('Total cost:', matcher.flow.OptimalCost())
 
     print(f'Status: {matcher.solve_status} of\n'
@@ -36,49 +35,26 @@ def report_flow(matcher, json_dict):
           f'        {ortg.SimpleMinCostFlow.BAD_COST_RANGE}: bad cost range')
     print('Preferences statistics:', matcher.prefs_min, matcher.prefs_max,
           matcher.prefs_mean, matcher.prefs_std, matcher.prefs_qtiles)
-    return acc, errs
 
 
-def assignment_bench(json_dict):
+def run_benchmark(json_dict, matcher, string_metric):
     keys = list(json_dict.keys())
     values = list(json_dict.values())
-
-    matcher = Graph.MinCostFlow(keys, values, SuffixArray)
+    m = matcher(keys, values)
 
     time_init = time()
-    matcher.set_prefs(Graph.vertex_diff)
+    m.set_prefs(string_metric)
     time_end_prefs = time()
-    matcher.match()
+    m.match()
     time_end = time()
 
     prefs_time = time_end_prefs - time_init
     total_time = time_end - time_init
 
-    acc, errs = report_flow(matcher, json_dict)
+    acc, errs = m.accuracy(json_dict)
 
-    return {
-        'total_time': total_time,
-        'preferences_time': prefs_time,
-        'accuracy': acc,
-        'errors': errs
-    }
-
-
-def benchmark(json_dict):
-    keys = list(json_dict.keys())
-    values = list(json_dict.values())
-
-    matcher = Graph.StableMatcher(keys, values)
-
-    time_init = time()
-    matcher.set_prefs(Graph.vertex_diff)
-    time_end_prefs = time()
-    matcher.match()
-    time_end = time()
-
-    prefs_time = time_end_prefs - time_init
-    total_time = time_end - time_init
-    acc, errs = matcher.accuracy(json_dict)
+    if args.matcher == 'mcf':
+        report_flow(m, json_dict, errs)
 
     return {
         'total_time': total_time,
@@ -99,11 +75,22 @@ def main():
     with open(args.json, 'r') as input_json:
         input_dict = json.load(input_json)
 
-    size = len(input_dict)
-    rslts = assignment_bench(input_dict)
+    if args.size:
+        tmp = sample(input_dict.items(), args.size)
+        input_dict = dict(tmp)
 
-    total_time = rslts['total_time']
-    prefs_time = rslts['preferences_time']
+    size = len(input_dict)
+    matcher = selected_matcher()
+    string_metric = selected_metric()
+
+    results = run_benchmark(input_dict, matcher, string_metric)
+
+    errs = results['errors']
+    acc = results['accuracy']
+    total_time = results['total_time']
+    prefs_time = results['preferences_time']
+    print(f'{len(errs)} wrong assignments')
+    print('Accuracy:', acc)
     print(f'Preferences run time: {prefs_time} seconds'
           f' ({prefs_time / 60} minutes)')
     print(f'Total run time: {total_time} seconds'
@@ -111,8 +98,7 @@ def main():
 
     if args.outdir:
         filename = args.json.split('/')[-1]
-        for label, value in zip(['sec', 'acc'],
-                                [rslts['total_time'], rslts['accuracy']]):
+        for label, value in zip(['sec', 'acc'], [total_time, acc]):
             output_path = f'{args.outdir}/{filename}_{label}.csv'
             if args.reset:
                 with open(output_path, 'w') as out_file:
@@ -120,9 +106,41 @@ def main():
             output(output_path, size, value)
 
 
+def selected_matcher():
+    if args.matcher == 'mcf':
+        return partial(Graph.MinCostFlow, filter_class=SuffixArray)
+    elif args.matcher == 'gs':
+        return Graph.StableMatcher
+
+
+def selected_metric():
+    metric = None
+    if args.distance == 'qg':
+        metric = partial(Strings.qdistance, q=args.q)
+    elif args.distance == 'ed':
+        metric = partial(Strings.edit_distance, trim=args.trim)
+    return partial(Graph.vertex_diff, string_metric=metric)
+
+
 if __name__ == '__main__':
     argp = argparse.ArgumentParser()
     argp.add_argument('json', type=str, help='path to .json input file')
+    argp.add_argument('-m', '--matcher', choices=['gs', 'mcf'], default='mcf',
+                      help='select which bipartite matcher to use: gs for'
+                           ' Gale-Shapley\'s stable marriage or mcf for'
+                           ' min-cost flow. Default: %(default)s')
+    argp.add_argument('-d', '--distance', choices=['ed', 'qg'], default='qg',
+                      help='select which string similarity metric to use:'
+                           ' ed for edit distance and qg for q-gram distance.'
+                           ' Default: %(default)s')
+    argp.add_argument('-q', type=int, default=2,
+                      help='the q if chosen metric is q-gram distance.'
+                           ' Default: %(default)s')
+    argp.add_argument('-t', '--trim', action='store_true',
+                      help='set to trim strings if chosen metric is edit'
+                           ' distance')
+    argp.add_argument('-s', '--size', type=int,
+                      help='randomly pick this many entries from input')
     argp.add_argument('-o', '--outdir', type=str,
                       help='directory to output time and accuracy as files')
     argp.add_argument('-r', '--reset', action='store_true',

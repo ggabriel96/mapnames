@@ -6,8 +6,6 @@ import numpy as np
 from ortools.graph import pywrapgraph as ortg
 from tqdm import tqdm
 
-import Strings
-
 
 class Vertex:
     def __init__(self, label, idx=None):
@@ -88,11 +86,13 @@ class CompleteBipartiteMatcher(BipartiteMatcher, ABC):
         """ Sets the preference list for all vertices in the left set against
         all in the right, and all in the right set against all in the left.
 
+        Shows a progress-bar for each of the two runs.
+
         :param h_fn: see Vertex.set_ratings()
         """
-        for l in self.left:
+        for l in tqdm(self.left):
             l.set_ratings(self.right, h_fn, also_prefs=True)
-        for r in self.right:
+        for r in tqdm(self.right):
             r.set_ratings(self.left, h_fn, also_prefs=True)
 
     def restore_prefs(self):
@@ -121,9 +121,11 @@ class FilteredBipartiteMatcher(BipartiteMatcher, ABC):
 
     def set_prefs(self, h_fn):
         """ Sets the preference list for all vertices in the left set against
-        all in the right, and all in the right set against all in the left.
+        some in the right, and all in the right set against some in the left,
+        where 'some' depends on the provided filter.
 
-        Shows a progress-bar for each of the two runs.
+        If no filter was provided, 'some' will be 'all'. Shows a progress-bar
+        for each of the two runs.
 
         :param h_fn: see Vertex.set_ratings()
         """
@@ -317,9 +319,5 @@ class MinCostFlow(FilteredBipartiteMatcher):
         return equal_amount / self.n, errors
 
 
-# Did not put on Vertex class because
-# this is too non-standard for graphs
-def vertex_diff(u, v):
-    dist = Strings.qdistance(u.label, v.label, 2)
-    # dist, _ = Strings.wagner_fischer(u.label, v.label, True)
-    return dist
+def vertex_diff(u, v, string_metric, **kwargs):
+    return string_metric(u.label, v.label, **kwargs)
