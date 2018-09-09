@@ -6,7 +6,7 @@ import numpy as np
 from ortools.graph import pywrapgraph as ortg
 from tqdm import tqdm
 
-from Strings import qdistance
+import Strings
 
 
 class Vertex:
@@ -54,6 +54,10 @@ class Vertex:
 
 
 class BipartiteMatcher(ABC):
+    def __init__(self):
+        self.left = None
+        self.right = None
+
     @abstractmethod
     def match(self):
         """ Run the matching implemented """
@@ -79,12 +83,79 @@ class BipartiteMatcher(ABC):
         pass
 
 
-class StableMatcher(BipartiteMatcher):
+class CompleteBipartiteMatcher(BipartiteMatcher, ABC):
+    def set_prefs(self, h_fn):
+        """ Sets the preference list for all vertices in the left set against
+        all in the right, and all in the right set against all in the left.
+
+        :param h_fn: see Vertex.set_ratings()
+        """
+        for l in self.left:
+            l.set_ratings(self.right, h_fn, also_prefs=True)
+        for r in self.right:
+            r.set_ratings(self.left, h_fn, also_prefs=True)
+
+    def restore_prefs(self):
+        for l in self.left:
+            l.restore_prefs()
+        for r in self.right:
+            r.restore_prefs()
+
+
+class FilteredBipartiteMatcher(BipartiteMatcher, ABC):
+    def __init__(self):
+        super().__init__()
+
+        # filter_on_left is used to filter left-side candidates,
+        # thus should be queried with a right vertex (and vice-versa)
+        self.filter_on_left = None
+        self.filter_on_right = None
+
+        # preference statistics computed on self.set_prefs
+        # if a filter was provided
+        self.prefs_min = None
+        self.prefs_max = None
+        self.prefs_mean = None
+        self.prefs_std = None
+        self.prefs_qtiles = None
+
+    def set_prefs(self, h_fn):
+        """ Sets the preference list for all vertices in the left set against
+        all in the right, and all in the right set against all in the left.
+
+        Shows a progress-bar for each of the two runs.
+
+        :param h_fn: see Vertex.set_ratings()
+        """
+        prefs_len = []
+        for these, those, filter_on_them in \
+                zip([self.left, self.right],
+                    [self.right, self.left],
+                    [self.filter_on_right, self.filter_on_left]):
+            for this in tqdm(these):
+                if filter_on_them is not None:
+                    filtrd_idxs = filter_on_them(this.label)
+                    them = those[filtrd_idxs]
+                    prefs_len.append(len(them))
+                else:
+                    them = those
+                this.set_ratings(them, h_fn)
+        if self.filter_on_left is not None or self.filter_on_right is not None:
+            self.prefs_min = min(prefs_len)
+            self.prefs_max = max(prefs_len)
+            self.prefs_mean = st.mean(prefs_len)
+            self.prefs_std = st.pstdev(prefs_len, self.prefs_mean)
+            self.prefs_qtiles = np.percentile(prefs_len, [25, 50, 75])
+
+
+class StableMatcher(CompleteBipartiteMatcher):
     def __init__(self, left, right):
         """
         :param left: left set of elements
         :param right: right set of elements
         """
+        super().__init__()
+
         self.n = len(left)
 
         # holds the result of self.match()
@@ -131,23 +202,6 @@ class StableMatcher(BipartiteMatcher):
             # to remove w from their list more than once
             del w.prefs[succ_index:]
 
-    def set_prefs(self, h_fn):
-        """ Sets the preference list for all vertices in the left set against
-        all in the right, and all in the right set against all in the left.
-
-        :param h_fn: see Vertex.set_ratings()
-        """
-        for l in self.left:
-            l.set_ratings(self.right, h_fn, also_prefs=True)
-        for r in self.right:
-            r.set_ratings(self.left, h_fn, also_prefs=True)
-
-    def restore_prefs(self):
-        for l in self.left:
-            l.restore_prefs()
-        for r in self.right:
-            r.restore_prefs()
-
     def accuracy(self, correct_mapping):
         """ Computes the achieved accuracy and the list of mismatches.
 
@@ -166,7 +220,7 @@ class StableMatcher(BipartiteMatcher):
         return equal_amount / len(self.assignment), errors
 
 
-class MinCostFlow(BipartiteMatcher):
+class MinCostFlow(FilteredBipartiteMatcher):
     def __init__(self, left, right, filter_class=None):
         """
         :param left: left set of elements
@@ -177,6 +231,8 @@ class MinCostFlow(BipartiteMatcher):
                              list of indexes of candidates to compare to that
                              string.
         """
+        super().__init__()
+
         self.n = len(left)
 
         self.flow = ortg.SimpleMinCostFlow()
@@ -185,19 +241,7 @@ class MinCostFlow(BipartiteMatcher):
         # numbering shift required by Google's library
         self.l_idx_shift, self.r_idx_shift = 1, self.n + 1
 
-        # preference statistics computed on self.set_prefs
-        # if a filter was provided
-        self.prefs_min = None
-        self.prefs_max = None
-        self.prefs_mean = None
-        self.prefs_std = None
-        self.prefs_qtiles = None
-
-        self.filter_on_left = None
-        self.filter_on_right = None
         if filter_class is not None:
-            # filter_on_left is used to filter left-side candidates,
-            # thus should be queried with a right vertex (and vice-versa)
             self.filter_on_left = filter_class(left)
             self.filter_on_right = filter_class(right)
 
@@ -251,34 +295,6 @@ class MinCostFlow(BipartiteMatcher):
         r = self.flow.Head(arc) - self.r_idx_shift
         return l, r
 
-    def set_prefs(self, h_fn):
-        """ Sets the preference list for all vertices in the left set against
-        all in the right, and all in the right set against all in the left.
-
-        Shows a progress-bar for each of the two runs.
-
-        :param h_fn: see Vertex.set_prefs
-        """
-        prefs_len = []
-        for these, those, filter_on_them in \
-                zip([self.left, self.right],
-                    [self.right, self.left],
-                    [self.filter_on_right, self.filter_on_left]):
-            for this in tqdm(these):
-                if filter_on_them is not None:
-                    filtrd_idxs = filter_on_them(this.label)
-                    them = those[filtrd_idxs]
-                    prefs_len.append(len(them))
-                else:
-                    them = those
-                this.set_ratings(them, h_fn)
-        if self.filter_on_left is not None or self.filter_on_right is not None:
-            self.prefs_min = min(prefs_len)
-            self.prefs_max = max(prefs_len)
-            self.prefs_mean = st.mean(prefs_len)
-            self.prefs_std = st.pstdev(prefs_len, self.prefs_mean)
-            self.prefs_qtiles = np.percentile(prefs_len, [25, 50, 75])
-
     def accuracy(self, correct_mapping):
         """ Computes the achieved accuracy and the list of mismatches.
 
@@ -304,6 +320,6 @@ class MinCostFlow(BipartiteMatcher):
 # Did not put on Vertex class because
 # this is too non-standard for graphs
 def vertex_diff(u, v):
-    dist = qdistance(u.label, v.label, 2)
-    # dist, _ = wagner_fischer(u.label, v.label, True)
+    dist = Strings.qdistance(u.label, v.label, 2)
+    # dist, _ = Strings.wagner_fischer(u.label, v.label, True)
     return dist
