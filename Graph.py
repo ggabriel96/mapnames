@@ -119,7 +119,7 @@ class FilteredBipartiteMatcher(BipartiteMatcher, ABC):
         self.prefs_std = None
         self.prefs_qtiles = None
 
-    def set_prefs(self, h_fn):
+    def set_prefs(self, h_fn, sort=False, also_prefs=False):
         """ Sets the preference list for all vertices in the left set against
         some in the right, and all in the right set against some in the left,
         where 'some' depends on the provided filter.
@@ -127,7 +127,7 @@ class FilteredBipartiteMatcher(BipartiteMatcher, ABC):
         If no filter was provided, 'some' will be 'all'. Shows a progress-bar
         for each of the two runs.
 
-        :param h_fn: see Vertex.set_ratings()
+        For a description of the parameters, see Vertex.set_ratings().
         """
         prefs_len = []
         for these, those, filter_on_them in \
@@ -141,7 +141,7 @@ class FilteredBipartiteMatcher(BipartiteMatcher, ABC):
                     prefs_len.append(len(them))
                 else:
                     them = those
-                this.set_ratings(them, h_fn)
+                this.set_ratings(them, h_fn, sort, also_prefs)
         if self.filter_on_left is not None or self.filter_on_right is not None:
             self.prefs_min = min(prefs_len)
             self.prefs_max = max(prefs_len)
