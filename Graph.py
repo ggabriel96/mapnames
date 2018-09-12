@@ -320,5 +320,121 @@ class MinCostFlow(FilteredBipartiteMatcher):
         return equal_amount / self.n, errors
 
 
+class StableMatchTrial(FilteredBipartiteMatcher):
+    def __init__(self, left, right, filter_class=None):
+        """
+        :param left: left set of elements
+        :param right: right set of elements
+        :param filter_class: a callable class to build filters for left and
+                             right sets (so the constructor will be called with
+                             them). Upon called with a string, must return a
+                             list of indexes of candidates to compare to that
+                             string.
+        """
+        super().__init__()
+
+        self.n = len(left)
+
+        # holds the result of self.match()
+        self.assignment = None
+
+        if filter_class is not None:
+            self.filter_on_left = filter_class(left)
+            self.filter_on_right = filter_class(right)
+
+        self.left = np.array([Vertex(left[l], l) for l in range(len(left))])
+        self.right = np.array([Vertex(right[r], r) for r in range(len(right))])
+
+    def set_prefs(self, h_fn, sort=False, also_prefs=True):
+        """ Auxiliary method to call super().set_prefs() with also_prefs=True
+         by default """
+        super().set_prefs(h_fn, sort, also_prefs)
+
+    def match(self):
+        """ Run a (somewhat bad) adaptation to Irving's weakly-stable marriage
+        algorithm with support for incomplete preference lists.
+
+        Must be called after a call to self.set_ratings() and will ruin the
+        preference lists (they can be restored with self.restore_prefs()).
+        Stores its result in self.assignment.
+        """
+        husbands = {}
+        self.assignment = {}
+        free_men = list(self.left)
+        while free_men:
+            man = free_men.pop(0)
+
+            # man preferences might get emptied later on
+            if not man.prefs:
+                continue
+
+            # pop to prevent infinite loop
+            woman = man.prefs.pop(0)
+
+            # if some man husband is engaged to woman,
+            # check if man is better than him and, if so,
+            # change the marriage
+            husband = husbands.get(woman)
+            if husband is not None:
+                try:
+                    man_idx = woman.prefs.index(man)
+                    husband_idx = woman.prefs.index(husband)
+                    # i < j in a preference list means that i-th
+                    # person is more preferable than j-th person
+                    should_change = man_idx < husband_idx
+                except ValueError:
+                    should_change = True
+
+                if should_change:
+                    del self.assignment[husband]
+                    free_men.append(husband)
+                else:
+                    woman.prefs.remove(man)
+                    continue
+
+            # man engages woman
+            self.assignment[man] = woman
+            husbands[woman] = man
+
+            # if man is in woman's preferences, then
+            # for each successor man' of man in woman's preferences,
+            # remove woman from the preferences of man' so that no man'
+            # less desirable than man will propose woman
+            try:
+                succ_idx = woman.prefs.index(man) + 1
+            except ValueError:
+                continue
+            for i in range(succ_idx, len(woman.prefs)):
+                successor = woman.prefs[i]
+                # no guarantee that preference list has woman,
+                # because this inherits from FilteredBipartiteMatcher
+                try:
+                    successor.prefs.remove(woman)
+                except ValueError:
+                    pass
+            # and delete all man' from woman's preferences so we won't
+            # attempt to remove woman from their list more than once
+            del woman.prefs[succ_idx:]
+
+    def accuracy(self, correct_mapping):
+        """ Computes the achieved accuracy and the list of mismatches.
+
+        :param correct_mapping: a dict holding the correct mapping
+        :return: a tuple of (accuracy, list of mismatched Vertex elements
+                 from self.left)
+        """
+        errors = []
+        equal_amount = 0
+        for l, r in self.assignment.items():
+            is_equal = r.label == correct_mapping[l.label]
+            if is_equal:
+                equal_amount += 1
+            else:
+                errors.append(l)
+        not_married = [l for l in self.left if l not in self.assignment]
+        errors.extend(not_married)
+        return equal_amount / len(self.left), errors
+
+
 def vertex_diff(u, v, string_metric, **kwargs):
     return string_metric(u.label, v.label, **kwargs)

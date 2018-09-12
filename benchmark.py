@@ -111,6 +111,8 @@ def selected_matcher():
         return partial(Graph.MinCostFlow, filter_class=SuffixArray)
     elif args.matcher == 'gs':
         return Graph.StableMatcher
+    elif args.matcher == 'fgs':
+        return partial(Graph.StableMatchTrial, filter_class=SuffixArray)
 
 
 def selected_metric():
@@ -125,10 +127,12 @@ def selected_metric():
 if __name__ == '__main__':
     argp = argparse.ArgumentParser()
     argp.add_argument('json', type=str, help='path to .json input file')
-    argp.add_argument('-m', '--matcher', choices=['gs', 'mcf'], default='mcf',
+    argp.add_argument('-m', '--matcher', choices=['gs', 'fgs', 'mcf'],
+                      default='mcf',
                       help='select which bipartite matcher to use: gs for'
-                           ' Gale-Shapley\'s stable marriage or mcf for'
-                           ' min-cost flow. Default: %(default)s')
+                           ' Gale-Shapley\'s stable marriage, fgs for an'
+                           ' adaptation of gs for incomplete preference lists'
+                           ' or mcf for min-cost flow. Default: %(default)s')
     argp.add_argument('-d', '--distance', choices=['ed', 'qg'], default='qg',
                       help='select which string similarity metric to use:'
                            ' ed for edit distance and qg for q-gram distance.'
