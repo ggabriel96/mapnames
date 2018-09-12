@@ -176,7 +176,7 @@ class StableMatcher(CompleteBipartiteMatcher):
         """
         husband = {}
         self.assignment = {}
-        # preferences list will get screwed...
+        # preference lists will get screwed...
         free_men = set(self.left)
         while len(free_men) > 0:
             m = free_men.pop()
@@ -193,15 +193,15 @@ class StableMatcher(CompleteBipartiteMatcher):
             self.assignment[m] = w
             husband[w] = m
 
-            # for each successor m' of m on w's preferences,
-            # remove w from m's preferences so that no man
+            # for each successor m' of m in w's preferences,
+            # remove w from the preferences of m' so that no man
             # less desirable than m will propose w
             succ_index = w.prefs.index(m) + 1
             for i in range(succ_index, len(w.prefs)):
                 successor = w.prefs[i]
                 successor.prefs.remove(w)
-            # and delete all m' from w so we won't attempt
-            # to remove w from their list more than once
+            # and delete all m' from w's preferences so we won't
+            # attempt to remove w from their list more than once
             del w.prefs[succ_index:]
 
     def accuracy(self, correct_mapping):
