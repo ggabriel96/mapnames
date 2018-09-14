@@ -6,9 +6,8 @@ from time import time
 
 from ortools.graph import pywrapgraph as ortg
 
-import Graph
-import Strings
-from SuffixArray import SuffixArray
+from mapnames import graph
+from mapnames import string
 
 
 def report_flow(matcher, json_dict, errs):
@@ -108,29 +107,33 @@ def main():
 
 def selected_matcher():
     if args.matcher == 'mcf':
-        return partial(Graph.MinCostFlow, filter_class=SuffixArray)
+        return graph.MinCostFlow
     elif args.matcher == 'gs':
-        return Graph.StableMatcher
-    elif args.matcher == 'fgs':
-        return partial(Graph.StableMatchTrial, filter_class=SuffixArray)
+        return graph.StableMarriage
+    elif args.matcher == 'igs':
+        return graph.SimpleMarriageAttempt
+    elif args.matcher == 'lgm':
+        return graph.LeftGreedyMarriage
 
 
 def selected_metric():
     metric = None
     if args.distance == 'qg':
-        metric = partial(Strings.qdistance, q=args.q)
+        metric = partial(string.qdistance, q=args.q)
     elif args.distance == 'ed':
-        metric = partial(Strings.edit_distance, trim=args.trim)
-    return partial(Graph.vertex_diff, string_metric=metric)
+        metric = partial(string.edit_distance, trim=args.trim)
+    return partial(graph.vertex_diff, string_metric=metric)
 
 
 if __name__ == '__main__':
     argp = argparse.ArgumentParser()
     argp.add_argument('json', type=str, help='path to .json input file')
-    argp.add_argument('-m', '--matcher', choices=['gs', 'fgs', 'mcf'],
+    argp.add_argument('-m', '--matcher', choices=['gs', 'igs', 'lgm', 'mcf'],
                       default='mcf',
                       help='select which bipartite matcher to use: gs for'
-                           ' Gale-Shapley\'s stable marriage, fgs for an'
+                           ' Gale-Shapley\'s stable marriage, igs for an'
+                           ' adaptation of gs for incomplete preference lists,'
+                           ' lgm for a greedy and even more left-biased'
                            ' adaptation of gs for incomplete preference lists'
                            ' or mcf for min-cost flow. Default: %(default)s')
     argp.add_argument('-d', '--distance', choices=['ed', 'qg'], default='qg',

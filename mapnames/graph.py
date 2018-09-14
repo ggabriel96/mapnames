@@ -6,6 +6,12 @@ import numpy as np
 from ortools.graph import pywrapgraph as ortg
 from tqdm import tqdm
 
+import mapnames.string
+
+
+def vertex_diff(u, v, string_metric, **kwargs):
+    return string_metric(u.label, v.label, **kwargs)
+
 
 class Vertex:
     def __init__(self, label, idx=None):
@@ -13,10 +19,16 @@ class Vertex:
         self.idx = idx
         self.prefs = None
         self.ratings = None
+        self.__ratings = None
 
     def set_ratings(self, others, h_fn, sort=False, also_prefs=False):
         """ Sets the rating list of this vertex according to the results of
         h_fn.
+
+        As setting the ratings might be computationally expensive, this method
+        stores the result in an internal attribute that is exposed through
+        the public self.ratings one. It is safe to modify self.ratings as it is
+        recoverable through this internal backup with self.restore_ratings().
 
         :param others: set of other vertices to compute rating list against
         :param h_fn: must be a function accepting two vertices and returning
@@ -29,11 +41,19 @@ class Vertex:
         :param also_prefs: if the preference list should be set at the end (will
                            also sort the ratings before actually setting prefs).
         """
-        self.ratings = [(other, h_fn(self, other)) for other in others]
+        self.__ratings = [(other, h_fn(self, other)) for other in others]
         if sort or also_prefs:
-            self.ratings.sort(key=op.itemgetter(1))
+            self.__ratings.sort(key=op.itemgetter(1))
         if also_prefs:
             self.restore_prefs()
+        self.restore_ratings()
+
+    def restore_ratings(self):
+        """ Set self.ratings based on an internal backup of it.
+
+        For more information, see self.set_ratings().
+        """
+        self.ratings = self.__ratings.copy()
 
     def restore_prefs(self):
         """ Set self.prefs based on self.ratings.
@@ -42,7 +62,7 @@ class Vertex:
         it a "real" preference list. Mainly for stable marriage or algorithms
         that alter the preference lists during their execution.
         """
-        self.prefs = [other for (other, _) in self.ratings]
+        self.prefs = [other for (other, _) in self.__ratings]
 
     def __str__(self):
         return self.label
@@ -50,6 +70,10 @@ class Vertex:
     def __repr__(self):
         return self.__str__()
 
+
+################################################################################
+# ABSTRACT CLASSES
+################################################################################
 
 class BipartiteMatcher(ABC):
     def __init__(self):
@@ -102,7 +126,7 @@ class CompleteBipartiteMatcher(BipartiteMatcher, ABC):
             r.restore_prefs()
 
 
-class FilteredBipartiteMatcher(BipartiteMatcher, ABC):
+class IncompleteBipartiteMatcher(BipartiteMatcher, ABC):
     def __init__(self):
         super().__init__()
 
@@ -150,7 +174,56 @@ class FilteredBipartiteMatcher(BipartiteMatcher, ABC):
             self.prefs_qtiles = np.percentile(prefs_len, [25, 50, 75])
 
 
-class StableMatcher(CompleteBipartiteMatcher):
+class IncompleteStableMarriage(IncompleteBipartiteMatcher, ABC):
+    def __init__(self, left, right, filter_class=mapnames.string.SuffixArray):
+        """
+        :param left: left set of elements
+        :param right: right set of elements
+        :param filter_class: a callable class to build filters for left and
+                             right sets (so the constructor will be called with
+                             them). Upon called with a string, must return a
+                             list of indexes of candidates to compare to that
+                             string.
+        """
+        super().__init__()
+
+        self.n = len(left)
+
+        # holds the result of self.match()
+        self.assignment = None
+
+        if filter_class is not None:
+            self.filter_on_left = filter_class(left)
+            self.filter_on_right = filter_class(right)
+
+        self.left = np.array([Vertex(left[l], l) for l in range(len(left))])
+        self.right = np.array([Vertex(right[r], r) for r in range(len(right))])
+
+    def accuracy(self, correct_mapping):
+        """ Computes the achieved accuracy and the list of mismatches.
+
+        :param correct_mapping: a dict holding the correct mapping
+        :return: a tuple of (accuracy, list of mismatched Vertex elements
+                 from self.left)
+        """
+        errors = []
+        equal_amount = 0
+        for l, r in self.assignment.items():
+            is_equal = r.label == correct_mapping[l.label]
+            if is_equal:
+                equal_amount += 1
+            else:
+                errors.append(l)
+        not_married = [l for l in self.left if l not in self.assignment]
+        errors.extend(not_married)
+        return equal_amount / len(self.left), errors
+
+
+################################################################################
+# IMPLEMENTATIONS
+################################################################################
+
+class StableMarriage(CompleteBipartiteMatcher):
     def __init__(self, left, right):
         """
         :param left: left set of elements
@@ -163,8 +236,8 @@ class StableMatcher(CompleteBipartiteMatcher):
         # holds the result of self.match()
         self.assignment = None
 
-        self.left = np.array([Vertex(left[l], l) for l in range(len(left))])
-        self.right = np.array([Vertex(right[r], r) for r in range(len(right))])
+        self.left = np.array([Vertex(l) for l in left])
+        self.right = np.array([Vertex(r) for r in right])
 
     def match(self):
         """ Run Irving's weakly-stable marriage algorithm.
@@ -222,8 +295,128 @@ class StableMatcher(CompleteBipartiteMatcher):
         return equal_amount / len(self.assignment), errors
 
 
-class MinCostFlow(FilteredBipartiteMatcher):
-    def __init__(self, left, right, filter_class=None):
+class SimpleMarriageAttempt(IncompleteStableMarriage):
+    def match(self):
+        """ Run a (somewhat bad) adaptation to Irving's weakly-stable marriage
+        algorithm with support for incomplete preference lists.
+
+        Must be called after a call to self.set_ratings() and will ruin the
+        preference lists (they can be restored with self.restore_prefs()).
+        Stores its result in self.assignment.
+        """
+        husbands = {}
+        self.assignment = {}
+        free_men = list(self.left)
+        while free_men:
+            man = free_men.pop(0)
+
+            # man preferences might get emptied later on
+            if not man.prefs:
+                continue
+
+            # pop to prevent infinite loop
+            woman = man.prefs.pop(0)
+
+            # if some man husband is engaged to woman,
+            # check if man is better than him and, if so,
+            # change the marriage
+            husband = husbands.get(woman)
+            if husband is not None:
+                try:
+                    man_idx = woman.prefs.index(man)
+                    husband_idx = woman.prefs.index(husband)
+                    # i < j in a preference list means that i-th
+                    # person is more preferable than j-th person
+                    should_change = man_idx < husband_idx
+                except ValueError:
+                    should_change = True
+
+                if should_change:
+                    del self.assignment[husband]
+                    free_men.append(husband)
+                else:
+                    woman.prefs.remove(man)
+                    continue
+
+            # man engages woman
+            self.assignment[man] = woman
+            husbands[woman] = man
+
+            # if man is in woman's preferences, then
+            # for each successor man' of man in woman's preferences,
+            # remove woman from the preferences of man' so that no man'
+            # less desirable than man will propose woman
+            try:
+                succ_idx = woman.prefs.index(man) + 1
+            except ValueError:
+                continue
+            for i in range(succ_idx, len(woman.prefs)):
+                successor = woman.prefs[i]
+                # no guarantee that preference list has woman,
+                # because this inherits from FilteredBipartiteMatcher
+                try:
+                    successor.prefs.remove(woman)
+                except ValueError:
+                    pass
+            # and delete all man' from woman's preferences so we won't
+            # attempt to remove woman from their list more than once
+            del woman.prefs[succ_idx:]
+
+    def set_prefs(self, h_fn, sort=False, also_prefs=True):
+        """ Auxiliary method to call super().set_prefs() with also_prefs=True
+         by default """
+        super().set_prefs(h_fn, sort, also_prefs)
+
+
+class LeftGreedyMarriage(IncompleteStableMarriage):
+    def match(self):
+        """ Run a (somewhat bad) greedy and even more left-biased adaptation to
+        Irving's weakly-stable marriage algorithm with support for incomplete
+        preference lists.
+
+        Must be called after a call to self.set_ratings() and will ruin the
+        rating lists (they can be restored with self.restore_ratings()). Only
+        takes into account the ratings of the left side. Stores its result in
+        self.assignment.
+        """
+        husbands = {}
+        self.assignment = {}
+        free_men = list(self.left)
+        while free_men:
+            man = free_men.pop(0)
+
+            # man preferences might get emptied later on
+            if not man.prefs:
+                continue
+
+            # pop to prevent infinite loop
+            woman, cost_man = man.ratings.pop(0)
+
+            # if some man husband is engaged to woman,
+            # check if man is better than him and, if so,
+            # change the marriage
+            husband_and_cost = husbands.get(woman)
+            if husband_and_cost is not None:
+                husband, cost_husband = husband_and_cost
+                if cost_man < cost_husband:
+                    del self.assignment[husband]
+                    free_men.append(husband)
+                else:
+                    continue
+
+            # man engages woman
+            self.assignment[man] = woman
+            husbands[woman] = man, cost_man
+
+    def restore_ratings(self):
+        for l in self.left:
+            l.restore_ratings()
+        for r in self.right:
+            r.restore_ratings()
+
+
+class MinCostFlow(IncompleteBipartiteMatcher):
+    def __init__(self, left, right, filter_class=mapnames.string.SuffixArray):
         """
         :param left: left set of elements
         :param right: right set of elements
@@ -318,123 +511,3 @@ class MinCostFlow(FilteredBipartiteMatcher):
                     else:
                         errors.append(arc)
         return equal_amount / self.n, errors
-
-
-class StableMatchTrial(FilteredBipartiteMatcher):
-    def __init__(self, left, right, filter_class=None):
-        """
-        :param left: left set of elements
-        :param right: right set of elements
-        :param filter_class: a callable class to build filters for left and
-                             right sets (so the constructor will be called with
-                             them). Upon called with a string, must return a
-                             list of indexes of candidates to compare to that
-                             string.
-        """
-        super().__init__()
-
-        self.n = len(left)
-
-        # holds the result of self.match()
-        self.assignment = None
-
-        if filter_class is not None:
-            self.filter_on_left = filter_class(left)
-            self.filter_on_right = filter_class(right)
-
-        self.left = np.array([Vertex(left[l], l) for l in range(len(left))])
-        self.right = np.array([Vertex(right[r], r) for r in range(len(right))])
-
-    def set_prefs(self, h_fn, sort=False, also_prefs=True):
-        """ Auxiliary method to call super().set_prefs() with also_prefs=True
-         by default """
-        super().set_prefs(h_fn, sort, also_prefs)
-
-    def match(self):
-        """ Run a (somewhat bad) adaptation to Irving's weakly-stable marriage
-        algorithm with support for incomplete preference lists.
-
-        Must be called after a call to self.set_ratings() and will ruin the
-        preference lists (they can be restored with self.restore_prefs()).
-        Stores its result in self.assignment.
-        """
-        husbands = {}
-        self.assignment = {}
-        free_men = list(self.left)
-        while free_men:
-            man = free_men.pop(0)
-
-            # man preferences might get emptied later on
-            if not man.prefs:
-                continue
-
-            # pop to prevent infinite loop
-            woman = man.prefs.pop(0)
-
-            # if some man husband is engaged to woman,
-            # check if man is better than him and, if so,
-            # change the marriage
-            husband = husbands.get(woman)
-            if husband is not None:
-                try:
-                    man_idx = woman.prefs.index(man)
-                    husband_idx = woman.prefs.index(husband)
-                    # i < j in a preference list means that i-th
-                    # person is more preferable than j-th person
-                    should_change = man_idx < husband_idx
-                except ValueError:
-                    should_change = True
-
-                if should_change:
-                    del self.assignment[husband]
-                    free_men.append(husband)
-                else:
-                    woman.prefs.remove(man)
-                    continue
-
-            # man engages woman
-            self.assignment[man] = woman
-            husbands[woman] = man
-
-            # if man is in woman's preferences, then
-            # for each successor man' of man in woman's preferences,
-            # remove woman from the preferences of man' so that no man'
-            # less desirable than man will propose woman
-            try:
-                succ_idx = woman.prefs.index(man) + 1
-            except ValueError:
-                continue
-            for i in range(succ_idx, len(woman.prefs)):
-                successor = woman.prefs[i]
-                # no guarantee that preference list has woman,
-                # because this inherits from FilteredBipartiteMatcher
-                try:
-                    successor.prefs.remove(woman)
-                except ValueError:
-                    pass
-            # and delete all man' from woman's preferences so we won't
-            # attempt to remove woman from their list more than once
-            del woman.prefs[succ_idx:]
-
-    def accuracy(self, correct_mapping):
-        """ Computes the achieved accuracy and the list of mismatches.
-
-        :param correct_mapping: a dict holding the correct mapping
-        :return: a tuple of (accuracy, list of mismatched Vertex elements
-                 from self.left)
-        """
-        errors = []
-        equal_amount = 0
-        for l, r in self.assignment.items():
-            is_equal = r.label == correct_mapping[l.label]
-            if is_equal:
-                equal_amount += 1
-            else:
-                errors.append(l)
-        not_married = [l for l in self.left if l not in self.assignment]
-        errors.extend(not_married)
-        return equal_amount / len(self.left), errors
-
-
-def vertex_diff(u, v, string_metric, **kwargs):
-    return string_metric(u.label, v.label, **kwargs)

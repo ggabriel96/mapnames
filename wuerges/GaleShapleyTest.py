@@ -1,8 +1,7 @@
 from hypothesis import given
-from hypothesis.strategies import text, integers, lists, composite
+from hypothesis.strategies import integers, lists, composite
 
-import GaleShapley as gs
-import copy
+from wuerges import GaleShapley as gs
 
 
 @composite

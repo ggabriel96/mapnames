@@ -1,9 +1,11 @@
-from optparse import OptionParser
-from SuffixTree import CreateTree
-import json
 import gc
+import json
+from optparse import OptionParser
+
 import progressbar
-import GaleShapley as gs
+
+from wuerges import GaleShapley as gs
+from wuerges.SuffixTree import CreateTree
 
 """
 This module is the driver program that can be used to process the testcases.
