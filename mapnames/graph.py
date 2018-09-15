@@ -94,13 +94,15 @@ class BipartiteMatcher(ABC):
         pass
 
     @abstractmethod
-    def accuracy(self, correct_mapping):
-        """ Computes the achieved accuracy and the list of mismatches.
+    def accuracy(self, correct_mapping, opt_dict_out=None):
+        """ Computes the achieved accuracy according to correct_mapping.
+
+        The accuracy must be between 0.0 and 1.0. Other optional return values
+        may be returned through opt_dict_out, e.g. the list of mismatches (of
+        which the elements may vary per implementation).
 
         :param correct_mapping: a dict holding the correct mapping
-        :return a tuple of (accuracy, list of mismatches). The accuracy must be
-                between 0.0 and 1.0. The elements of the list may vary per
-                implementation.
+        :param opt_out: optional dictionary for additional output values
         """
         pass
 
@@ -199,24 +201,29 @@ class IncompleteStableMarriage(IncompleteBipartiteMatcher, ABC):
         self.left = np.array([Vertex(left[l], l) for l in range(len(left))])
         self.right = np.array([Vertex(right[r], r) for r in range(len(right))])
 
-    def accuracy(self, correct_mapping):
+    def accuracy(self, correct_mapping, opt_dict_out=None):
         """ Computes the achieved accuracy and the list of mismatches.
 
+        The accuracy takes into account unmatched elements as wrong matchings.
+
         :param correct_mapping: a dict holding the correct mapping
-        :return: a tuple of (accuracy, list of mismatched Vertex elements
-                 from self.left)
+        :param opt_dict_out: if not None, a list of mismatched and a list of
+                             unmatched Vertex elements from self.left
+        :return: the accuracy
         """
         errors = []
-        equal_amount = 0
         for l, r in self.assignment.items():
             is_equal = r.label == correct_mapping[l.label]
-            if is_equal:
-                equal_amount += 1
-            else:
+            if not is_equal:
                 errors.append(l)
-        not_married = [l for l in self.left if l not in self.assignment]
-        errors.extend(not_married)
-        return equal_amount / len(self.left), errors
+        if opt_dict_out is not None:
+            unmatched = self.get_unmatched()
+            opt_dict_out['errors'] = errors
+            opt_dict_out['unmatched'] = unmatched
+        return (self.n - len(errors)) / self.n
+
+    def get_unmatched(self):
+        return [l for l in self.left if l not in self.assignment]
 
 
 ################################################################################
@@ -277,22 +284,22 @@ class StableMarriage(CompleteBipartiteMatcher):
             # attempt to remove w from their list more than once
             del w.prefs[succ_index:]
 
-    def accuracy(self, correct_mapping):
+    def accuracy(self, correct_mapping, opt_dict_out=None):
         """ Computes the achieved accuracy and the list of mismatches.
 
         :param correct_mapping: a dict holding the correct mapping
-        :return: a tuple of (accuracy, list of mismatched Vertex elements
-                 from self.left)
+        :param opt_dict_out: if not None, a list of mismatched Vertex elements
+                             from self.left
+        :return: the accuracy
         """
         errors = []
-        equal_amount = 0
         for l, r in self.assignment.items():
             is_equal = r.label == correct_mapping[l.label]
-            if is_equal:
-                equal_amount += 1
-            else:
+            if not is_equal:
                 errors.append(l)
-        return equal_amount / len(self.assignment), errors
+        if opt_dict_out is not None:
+            opt_dict_out['errors'] = errors
+        return (self.n - len(errors)) / self.n
 
 
 class SimpleMarriageAttempt(IncompleteStableMarriage):
@@ -490,15 +497,15 @@ class MinCostFlow(IncompleteBipartiteMatcher):
         r = self.flow.Head(arc) - self.r_idx_shift
         return l, r
 
-    def accuracy(self, correct_mapping):
+    def accuracy(self, correct_mapping, opt_dict_out=None):
         """ Computes the achieved accuracy and the list of mismatches.
 
         :param correct_mapping: a dict holding the correct mapping
-        :return: a tuple of (accuracy, list of mismatched arcs)
+        :param opt_dict_out: if not None, a list of mismatched arcs
+        :return: the accuracy
         """
-        errors = []
-        equal_amount = 0
         if self.solve_status == ortg.SimpleMinCostFlow.OPTIMAL:
+            errors = []
             for arc in range(self.flow.NumArcs()):
                 if self.flow.Tail(arc) != self.source \
                         and self.flow.Head(arc) != self.sink \
@@ -506,8 +513,9 @@ class MinCostFlow(IncompleteBipartiteMatcher):
                     l, r = self.endpoints(arc)
                     is_equal = self.right[r].label == \
                                correct_mapping[self.left[l].label]
-                    if is_equal:
-                        equal_amount += 1
-                    else:
+                    if not is_equal:
                         errors.append(arc)
-        return equal_amount / self.n, errors
+            if opt_dict_out is not None:
+                opt_dict_out['errors'] = errors
+            return (self.n - len(errors)) / self.n
+        return 0.0

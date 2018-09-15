@@ -50,7 +50,9 @@ def run_benchmark(json_dict, matcher, string_metric):
     prefs_time = time_end_prefs - time_init
     total_time = time_end - time_init
 
-    acc, errs = m.accuracy(json_dict)
+    others = {}
+    acc = m.accuracy(json_dict, opt_dict_out=others)
+    errs = others.get('errors')
 
     if args.matcher == 'mcf':
         report_flow(m, json_dict, errs)
@@ -84,11 +86,9 @@ def main():
 
     results = run_benchmark(input_dict, matcher, string_metric)
 
-    errs = results['errors']
     acc = results['accuracy']
     total_time = results['total_time']
     prefs_time = results['preferences_time']
-    print(f'{len(errs)} wrong assignments')
     print('Accuracy:', acc)
     print(f'Preferences run time: {prefs_time} seconds'
           f' ({prefs_time / 60} minutes)')
