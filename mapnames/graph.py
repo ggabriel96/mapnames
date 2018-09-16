@@ -216,11 +216,11 @@ class IncompleteStableMarriage(IncompleteBipartiteMatcher, ABC):
             is_equal = r.label == correct_mapping[l.label]
             if not is_equal:
                 errors.append(l)
+        unmatched = self.get_unmatched()
         if opt_dict_out is not None:
-            unmatched = self.get_unmatched()
             opt_dict_out['errors'] = errors
             opt_dict_out['unmatched'] = unmatched
-        return (self.n - len(errors)) / self.n
+        return (self.n - len(errors) - len(unmatched)) / self.n
 
     def get_unmatched(self):
         return [l for l in self.left if l not in self.assignment]
