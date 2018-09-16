@@ -392,8 +392,7 @@ class LeftGreedyMarriage(IncompleteStableMarriage):
         while free_men:
             man = free_men.pop(0)
 
-            # man preferences might get emptied later on
-            if not man.prefs:
+            if not man.ratings:
                 continue
 
             # pop to prevent infinite loop
