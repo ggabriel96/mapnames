@@ -79,6 +79,7 @@ class BipartiteMatcher(ABC):
     def __init__(self):
         self.left = None
         self.right = None
+        self.n = None
 
     @abstractmethod
     def match(self):
