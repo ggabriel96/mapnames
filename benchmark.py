@@ -32,8 +32,6 @@ def report_flow(matcher, json_dict, errs):
           f'        {ortg.SimpleMinCostFlow.UNBALANCED}: unbalanced,\n'
           f'        {ortg.SimpleMinCostFlow.BAD_RESULT}: bad result,\n'
           f'        {ortg.SimpleMinCostFlow.BAD_COST_RANGE}: bad cost range')
-    print('Preferences statistics:', matcher.prefs_min, matcher.prefs_max,
-          matcher.prefs_mean, matcher.prefs_std, matcher.prefs_qtiles)
 
 
 def run_benchmark(json_dict, matcher, string_metric):
@@ -52,16 +50,34 @@ def run_benchmark(json_dict, matcher, string_metric):
 
     others = {}
     acc = m.accuracy(json_dict, opt_dict_out=others)
-    errs = others.get('errors')
 
-    if args.matcher == 'mcf':
+    errs = others.get('errors', [])
+    if isinstance(m, graph.MinCostFlow):
         report_flow(m, json_dict, errs)
+
+    print('Dataset size:', m.n)
+
+    if isinstance(m, graph.IncompleteBipartiteMatcher):
+        print('Lengths of preferences:\n'
+              f'     min: {m.prefs_min}\n'
+              f'     max: {m.prefs_max}\n'
+              f'    mean: {m.prefs_mean}\n'
+              f'  stddev: {m.prefs_std}\n'
+              f'  qtiles: {m.prefs_qtiles}')
+
+    unmatched = others.get('unmatched', [])
+    print('Accuracy:', acc)
+    print(f'Unmatched elements: {len(unmatched)} ({len(unmatched) / m.n})')
+    print(f'Mismatched elements: {len(errs)} ({len(errs) / m.n})')
+    print(f'Preferences run time: {prefs_time} seconds'
+          f' ({prefs_time / 60} minutes)')
+    print(f'Total run time: {total_time} seconds'
+          f' ({total_time / 60} minutes)')
 
     return {
         'total_time': total_time,
         'preferences_time': prefs_time,
-        'accuracy': acc,
-        'errors': errs
+        'accuracy': acc
     }
 
 
@@ -86,16 +102,10 @@ def main():
 
     results = run_benchmark(input_dict, matcher, string_metric)
 
-    acc = results['accuracy']
-    total_time = results['total_time']
-    prefs_time = results['preferences_time']
-    print('Accuracy:', acc)
-    print(f'Preferences run time: {prefs_time} seconds'
-          f' ({prefs_time / 60} minutes)')
-    print(f'Total run time: {total_time} seconds'
-          f' ({total_time / 60} minutes)')
-
     if args.outdir:
+        acc = results['accuracy']
+        total_time = results['total_time']
+
         filename = args.json.split('/')[-1]
         for label, value in zip(['sec', 'acc'], [total_time, acc]):
             output_path = f'{args.outdir}/{filename}_{label}.csv'
