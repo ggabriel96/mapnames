@@ -1,6 +1,7 @@
 import argparse
 import json
 from functools import partial
+from pathlib import Path
 from random import sample
 from time import time
 
@@ -81,11 +82,6 @@ def run_benchmark(json_dict, matcher, string_metric):
     }
 
 
-def output(output_path, x, y):
-    with open(output_path, 'a') as out_file:
-        print(f'{x}, {y}', file=out_file)
-
-
 def main():
     print('Running benchmark with arguments:', args)
 
@@ -96,7 +92,6 @@ def main():
         tmp = sample(input_dict.items(), args.size)
         input_dict = dict(tmp)
 
-    size = len(input_dict)
     matcher = selected_matcher()
     string_metric = selected_metric()
 
@@ -106,13 +101,18 @@ def main():
         acc = results['accuracy']
         total_time = results['total_time']
 
+        outdir = Path(args.outdir)
+        if not outdir.exists():
+            outdir.mkdir(parents=True)
+
         filename = args.json.split('/')[-1]
-        for label, value in zip(['sec', 'acc'], [total_time, acc]):
-            output_path = f'{args.outdir}/{filename}_{label}.csv'
-            if args.reset:
-                with open(output_path, 'w') as out_file:
-                    print('x, y', file=out_file)
-            output(output_path, size, value)
+        outfile = outdir / f'{filename}.csv'
+
+        if args.reset or not outfile.exists():
+            with outfile.open('w') as f:
+                print('matcher, accuracy, time', file=f)
+        with outfile.open('a') as f:
+            print(f'{args.matcher}, {acc}, {total_time}', file=f)
 
 
 def selected_matcher():
