@@ -103,7 +103,7 @@ class BipartiteMatcher(ABC):
         which the elements may vary per implementation).
 
         :param correct_mapping: a dict holding the correct mapping
-        :param opt_out: optional dictionary for additional output values
+        :param opt_dict_out: optional dictionary for additional output values
         """
         pass
 
