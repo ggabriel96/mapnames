@@ -157,19 +157,30 @@ def qdistance(str1, str2, q):
 
 
 class QProfile(Counter):
-    def __init__(self, string=None, q=2):
-        if string is not None:
-            n = len(string)
-            qgrams = [string[i:i + q] for i in range(n - q + 1)]
+    def __init__(self, param, q=2):
+        """
+        If a QProfile is passed in through param, a new object is constructed
+        that is a copy of it. In this case, the q parameter is ignored.
+
+        :param param: string or QProfile
+        :param q: q-value for this profile
+        """
+        if isinstance(param, str):
+            self.q = q
+            n = len(param)
+            qgrams = [param[i:i + q] for i in range(n - q + 1)]
             super().__init__(qgrams)
-        super().__init__()
+        elif isinstance(param, QProfile):
+            self.q = param.q
+            super().__init__(param)
+        else:
+            raise TypeError(f'object of type {type(param)} not supported')
 
     def __sub__(self, other):
         """ Returns a new QProfile that is the subtraction of self and other """
         if not isinstance(other, QProfile):
             return NotImplemented
-        result = QProfile()
-        result.update(self)
+        result = QProfile(self)
         result.subtract(other)
         return result
 
