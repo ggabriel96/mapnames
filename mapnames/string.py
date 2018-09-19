@@ -156,6 +156,28 @@ def qdistance(str1, str2, q):
     return sum((abs(count) for count in profile1.values()))
 
 
+class QProfile(Counter):
+    def __init__(self, string=None, q=2):
+        if string is not None:
+            n = len(string)
+            qgrams = [string[i:i + q] for i in range(n - q + 1)]
+            super().__init__(qgrams)
+        super().__init__()
+
+    def __sub__(self, other):
+        """ Returns a new QProfile that is the subtraction of self and other """
+        if not isinstance(other, QProfile):
+            return NotImplemented
+        result = QProfile()
+        result.update(self)
+        result.subtract(other)
+        return result
+
+    def distance_to(self, other):
+        diff = self - other
+        return sum((abs(count) for count in diff.values()))
+
+
 class SuffixArray:
     def __init__(self, strings):
         """ Saves the strings and builds the Suffix Array.
