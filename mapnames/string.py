@@ -1,5 +1,6 @@
 import operator as op
 from collections import Counter
+from collections import defaultdict as ddict
 
 import numpy as np
 
@@ -187,6 +188,63 @@ class QProfile(Counter):
     def distance_to(self, other):
         diff = self - other
         return sum((abs(count) for count in diff.values()))
+
+
+class QGramIndex:
+    def __init__(self, strings, q=2):
+        """ Builds the q-gram index.
+
+        This index does not currently store the list of strings.
+
+        :param strings: the list of strings to build the q-gram index on
+        :param q: the q-value for the index
+        """
+        self.q = q
+        self.index = ddict(list)
+        for i in range(len(strings)):
+            iqp = QProfile(strings[i], q)
+            for qgram, count in iqp.items():
+                self.index[qgram].append((count, i))
+        for v in self.index.values():
+            v.sort(reverse=True)
+
+    def __call__(self, query, qgram_count_ratio=0.8, profile_ratio=1.0):
+        """
+        :param query: string or QProfile
+        :param qgram_count_ratio: the minimum ratio of the count of a q-gram of
+                                  a possible candidate compared to query. If the
+                                  candidate count is less than the query count
+                                  for the same q-gram, the candidate is
+                                  disregarded.
+        :param profile_ratio: the minimum ratio of match between the profile of
+                              a candidate and the query. A value of 1.0 means
+                              that candidates must have a profile that contains
+                              at least all q-grams that the query has.
+        :return: a list of indices that index the list of strings originally
+                 passed to the constructor
+        """
+        all_candidates = []
+        if isinstance(query, QProfile):
+            if query.q != self.q:
+                raise ValueError(f'query has different q-value:'
+                                 f' {query.q} instead of {self.q}')
+            query_profile = query
+        else:
+            query_profile = QProfile(query, self.q)
+        for qgram, count in query_profile.items():
+            count_threshold = int(count * qgram_count_ratio)
+            candidates = self.index.get(qgram)
+            if candidates is not None:
+                for candidate_count, candidate_idx in candidates:
+                    if candidate_count >= count_threshold:
+                        all_candidates.append(candidate_idx)
+                    else:
+                        break
+        candidates_count = Counter(all_candidates)
+        profile_threshold = max(1, int(len(query_profile) * profile_ratio))
+        indices = [candidate for candidate, count in candidates_count.items()
+                   if count >= profile_threshold]
+        return indices
 
 
 class SuffixArray:
