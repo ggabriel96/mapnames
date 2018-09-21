@@ -209,7 +209,8 @@ class QGramIndex:
             v.sort(reverse=True)
 
     def __call__(self, query, qgram_count_ratio=0.8, profile_ratio=1.0):
-        """
+        """ Query the index.
+
         :param query: string or QProfile
         :param qgram_count_ratio: the minimum ratio of the count of a q-gram of
                                   a possible candidate compared to query. If the
