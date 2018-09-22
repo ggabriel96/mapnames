@@ -95,6 +95,11 @@ def main():
     matcher = selected_matcher()
     string_metric = selected_metric()
 
+    # input_dict is not available in selected_matcher()
+    # and I didn't want to put it there
+    if matcher == graph.CheatingMatcher:
+        matcher = partial(graph.CheatingMatcher, correct_mapping=input_dict)
+
     results = run_benchmark(input_dict, matcher, string_metric)
 
     if args.outdir:
@@ -124,6 +129,8 @@ def selected_matcher():
         return graph.SimpleMarriageAttempt
     elif args.matcher == 'lgm':
         return graph.LeftGreedyMarriage
+    elif args.matcher == 'c':
+        return graph.CheatingMatcher
 
 
 def selected_metric():
@@ -138,14 +145,18 @@ def selected_metric():
 if __name__ == '__main__':
     argp = argparse.ArgumentParser()
     argp.add_argument('json', type=str, help='path to .json input file')
-    argp.add_argument('-m', '--matcher', choices=['gs', 'igs', 'lgm', 'mcf'],
+    argp.add_argument('-m', '--matcher', choices=['gs', 'igs', 'lgm',
+                                                  'mcf', 'c'],
                       default='mcf',
                       help='select which bipartite matcher to use: gs for'
-                           ' Gale-Shapley\'s stable marriage, igs for an'
-                           ' adaptation of gs for incomplete preference lists,'
+                           ' Gale-Shapley\'s stable marriage; igs for an'
+                           ' adaptation of gs for incomplete preference lists;'
                            ' lgm for a greedy and even more left-biased'
-                           ' adaptation of gs for incomplete preference lists'
-                           ' or mcf for min-cost flow. Default: %(default)s')
+                           ' adaptation of gs for incomplete preference lists;'
+                           ' mcf for min-cost flow; or c for a cheating matcher'
+                           ' that assigns the correct mapping if it is present'
+                           ' in the preference lists.'
+                           ' Default: %(default)s')
     argp.add_argument('-d', '--distance', choices=['ed', 'qg'], default='qg',
                       help='select which string similarity metric to use:'
                            ' ed for edit distance and qg for q-gram distance.'
