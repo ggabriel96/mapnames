@@ -110,14 +110,18 @@ def main():
         if not outdir.exists():
             outdir.mkdir(parents=True)
 
-        filename = args.json.split('/')[-1]
+        filename = args.matcher if args.comparison else args.json.split('/')[-1]
         outfile = outdir / f'{filename}.csv'
 
         if args.reset or not outfile.exists():
             with outfile.open('w') as f:
-                print('matcher, accuracy, time', file=f)
+                if not args.comparison:
+                    print('matcher,', end='', file=f)
+                print('accuracy,time', file=f)
         with outfile.open('a') as f:
-            print(f'{args.matcher}, {acc}, {total_time}', file=f)
+            if not args.comparison:
+                print(f'{args.matcher},', end='', file=f)
+            print(f'{acc},{total_time}', file=f)
 
 
 def selected_matcher():
@@ -171,6 +175,11 @@ if __name__ == '__main__':
                       help='randomly pick this many entries from input')
     argp.add_argument('-o', '--outdir', type=str,
                       help='directory to output time and accuracy as files')
+    argp.add_argument('-c', '--comparison', action='store_true',
+                      help='switch output of time and accuracy in a file'
+                           ' dedicated to the selected matcher instead of'
+                           ' given input. Good for comparing different'
+                           ' matchers')
     argp.add_argument('-r', '--reset', action='store_true',
                       help='reset file before output')
     args = argp.parse_args()
