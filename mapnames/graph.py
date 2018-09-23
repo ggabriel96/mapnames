@@ -422,6 +422,45 @@ class LeftGreedyMarriage(IncompleteStableMarriage):
             r.restore_ratings()
 
 
+class CheatingMatcher(IncompleteStableMarriage):
+    def __init__(self, left, right, correct_mapping,
+                 filter_class=mapnames.string.SuffixArray):
+        """ An IncompleteStableMarriage implementation that (only) assigns the
+        correct mapping if it is available in the vertices preference lists.
+
+        Used to assess the quality of the filtered preference lists.
+
+        :param left: left set of elements
+        :param right: right set of elements
+        :param filter_class: a callable class to build filters for left and
+                             right sets (so the constructor will be called with
+                             them). Upon called with a string, must return a
+                             list of indexes of candidates to compare to that
+                             string.
+        :param correct_mapping: a dict holding the correct mapping
+        """
+        super().__init__(left, right, filter_class)
+        self.correct_mapping = correct_mapping
+
+    def match(self):
+        """ Assigns all left vertices to their correct mapping if they are
+        present in their preference lists.
+
+        Those vertices whose correct mapping is not present in their preference
+        lists are left unmatched.
+        """
+        self.assignment = {}
+        for l in self.left:
+            for r in l.prefs:
+                if self.correct_mapping[l.label] == r.label:
+                    self.assignment[l] = r
+
+    def set_prefs(self, h_fn, sort=False, also_prefs=True):
+        """ Auxiliary method to call super().set_prefs() with also_prefs=True
+         by default """
+        super().set_prefs(h_fn, sort, also_prefs)
+
+
 class MinCostFlow(IncompleteBipartiteMatcher):
     def __init__(self, left, right, filter_class=mapnames.string.SuffixArray):
         """
