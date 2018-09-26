@@ -110,18 +110,19 @@ def main():
         if not outdir.exists():
             outdir.mkdir(parents=True)
 
-        filename = args.matcher if args.comparison else args.json.split('/')[-1]
-        outfile = outdir / f'{filename}.csv'
+        filename_in = args.json.split('/')[-1]
+        filename_out = args.matcher if args.comparison else filename_in
+        outfile = outdir / f'{filename_out}.csv'
 
         if args.reset or not outfile.exists():
             with outfile.open('w') as f:
                 if not args.comparison:
                     print('matcher,', end='', file=f)
-                print('accuracy,time', file=f)
+                print('case,accuracy,time', file=f)
         with outfile.open('a') as f:
             if not args.comparison:
                 print(f'{args.matcher},', end='', file=f)
-            print(f'{acc},{total_time}', file=f)
+            print(f'{filename_in},{acc},{total_time}', file=f)
 
 
 def selected_matcher():
