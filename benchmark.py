@@ -35,10 +35,10 @@ def report_flow(matcher, json_dict, errs):
           f'        {ortg.SimpleMinCostFlow.BAD_COST_RANGE}: bad cost range')
 
 
-def run_benchmark(json_dict, matcher, string_metric):
+def run_benchmark(json_dict, matcher, filter_class, string_metric):
     keys = list(json_dict.keys())
     values = list(json_dict.values())
-    m = matcher(keys, values)
+    m = matcher(keys, values, filter_class=filter_class)
 
     time_init = time()
     m.set_prefs(string_metric)
@@ -93,6 +93,7 @@ def main():
         input_dict = dict(tmp)
 
     matcher = selected_matcher()
+    filter_class = selected_filter()
     string_metric = selected_metric()
 
     # input_dict is not available in selected_matcher()
@@ -100,7 +101,7 @@ def main():
     if matcher == graph.CheatingMatcher:
         matcher = partial(graph.CheatingMatcher, correct_mapping=input_dict)
 
-    results = run_benchmark(input_dict, matcher, string_metric)
+    results = run_benchmark(input_dict, matcher, filter_class, string_metric)
 
     if args.outdir:
         acc = results['accuracy']
@@ -138,6 +139,13 @@ def selected_matcher():
         return graph.CheatingMatcher
 
 
+def selected_filter():
+    if args.filter == 'sa':
+        return string.SuffixArray
+    elif args.filter == 'qg':
+        return partial(string.QGramIndex, q=args.q)
+
+
 def selected_metric():
     metric = None
     if args.distance == 'qg':
@@ -162,12 +170,16 @@ if __name__ == '__main__':
                            ' that assigns the correct mapping if it is present'
                            ' in the preference lists.'
                            ' Default: %(default)s')
+    argp.add_argument('-f', '--filter', choices=['sa', 'qg'], default='sa',
+                      help='select which filter to use: sa for suffix array'
+                           ' and qg for q-gram index. Default: %(default)s')
     argp.add_argument('-d', '--distance', choices=['ed', 'qg'], default='qg',
                       help='select which string similarity metric to use:'
                            ' ed for edit distance and qg for q-gram distance.'
                            ' Default: %(default)s')
     argp.add_argument('-q', type=int, default=2,
-                      help='the q if chosen metric is q-gram distance.'
+                      help='the q if chosen metric is q-gram distance or'
+                           ' filter is q-gram index.'
                            ' Default: %(default)s')
     argp.add_argument('-t', '--trim', action='store_true',
                       help='set to trim strings if chosen metric is edit'

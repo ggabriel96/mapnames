@@ -208,7 +208,7 @@ class QGramIndex:
         for v in self.index.values():
             v.sort(reverse=True)
 
-    def __call__(self, query, qgram_count_ratio=0.8, profile_ratio=1.0):
+    def __call__(self, query, qgram_count_ratio=0.5, profile_ratio=0.75):
         """ Query the index.
 
         :param query: string or QProfile
@@ -224,7 +224,6 @@ class QGramIndex:
         :return: a list of indices that index the list of strings originally
                  passed to the constructor
         """
-        all_candidates = []
         if isinstance(query, QProfile):
             if query.q != self.q:
                 raise ValueError(f'query has different q-value:'
@@ -232,6 +231,7 @@ class QGramIndex:
             query_profile = query
         else:
             query_profile = QProfile(query, self.q)
+        all_candidates = []
         for qgram, count in query_profile.items():
             count_threshold = int(count * qgram_count_ratio)
             candidates = self.index.get(qgram)

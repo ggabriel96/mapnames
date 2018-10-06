@@ -1,7 +1,7 @@
 import matplotlib.pyplot as plt
 import pandas as pd
 
-for m in ['c', 'igs', 'lgm']:
+for m in ['nosuffix', 'suffix']:
     df = pd.read_csv(f'{m}.csv')
     plt.xlabel('Test case')
     plt.ylabel('Accuracy')
