@@ -2,7 +2,7 @@ import argparse
 import json
 from functools import partial
 from pathlib import Path
-from random import sample
+from random import sample, seed
 from time import time
 
 from ortools.graph import pywrapgraph as ortg
@@ -89,6 +89,7 @@ def main():
         input_dict = json.load(input_json)
 
     if args.size:
+        seed(args.seed)
         tmp = sample(input_dict.items(), args.size)
         input_dict = dict(tmp)
 
@@ -112,7 +113,9 @@ def main():
             outdir.mkdir(parents=True)
 
         filename_in = args.json.split('/')[-1]
-        filename_out = args.matcher if args.comparison else filename_in
+        filename_out = f'{args.matcher}_{args.filter}_{args.distance}' \
+            if args.comparison \
+            else filename_in
         outfile = outdir / f'{filename_out}.csv'
 
         if args.reset or not outfile.exists():
@@ -123,7 +126,7 @@ def main():
         with outfile.open('a') as f:
             if not args.comparison:
                 print(f'{args.matcher},', end='', file=f)
-            print(f'{filename_in},{acc},{total_time}', file=f)
+            print(f'{filename_in[:-5]},{acc},{total_time}', file=f)
 
 
 def selected_matcher():
@@ -184,8 +187,10 @@ if __name__ == '__main__':
     argp.add_argument('-t', '--trim', action='store_true',
                       help='set to trim strings if chosen metric is edit'
                            ' distance')
-    argp.add_argument('-s', '--size', type=int,
+    argp.add_argument('-k', '--size', type=int,
                       help='randomly pick this many entries from input')
+    argp.add_argument('-s', '--seed', type=int, default=None,
+                      help='seed to initialize RNG. Default: %(default)s')
     argp.add_argument('-o', '--outdir', type=str,
                       help='directory to output time and accuracy as files')
     argp.add_argument('-c', '--comparison', action='store_true',
