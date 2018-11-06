@@ -260,10 +260,20 @@ class SuffixArray:
 
     def build(self):
         """ Builds the Suffix Array based on saved strings """
-        self.suffixes = [(self.strings[i][j:], i, j)
-                         for i in range(len(self.strings))
-                         for j in range(len(self.strings[i]))]
-        self.suffixes.sort()
+        # simple index:
+        # self.suffixes = [(self.strings[i], i, i)
+        #                  for i in range(len(self.strings))]
+
+        # simple suffix array:
+        # self.suffixes = [(self.strings[i][j:], i, j)
+        #                  for i in range(len(self.strings))
+        #                  for j in range(len(self.strings[i]))]
+
+        # space-optimized (?) suffix array:
+        self.suffixes = [(idx, offset)
+                         for idx in range(len(self.strings))
+                         for offset in range(len(self.strings[idx]))]
+        self.suffixes.sort(key=lambda x: self.strings[x[0]][x[1]:])
 
     def binary_search(self, string, lower=True):
         """ Searches for lower or upper bound for string
@@ -285,17 +295,19 @@ class SuffixArray:
         lo, hi = 0, len(self.suffixes) - 1
         while lo < hi:
             mid = int(lo + (hi - lo) / 2)
-            suffix = self.suffixes[mid][0]
-            # print(lo, mid, hi, suffix)
-            if cmp(suffix[:strlen], string):
+            idx, offset = self.suffixes[mid]
+            ith_suffix = self.strings[idx][offset:]
+            if cmp(ith_suffix[:strlen], string):
                 hi = mid
             else:
                 lo = mid + 1
         # special case: if searching for upper bound and
         # last suffix is not equal to the query string,
-        # then decrease upper bound (should we?)
+        # then decrease upper bound
         if not lower:
-            if self.suffixes[hi][0][:strlen] != string:
+            idx, offset = self.suffixes[hi]
+            ith_suffix = self.strings[idx][offset:]
+            if ith_suffix[:strlen] != string:
                 hi -= 1
         return lo if lower else hi
 
@@ -323,7 +335,7 @@ class SuffixArray:
         :return: list of indices pointing to filtered strings of self.strings
         """
         lower_bound, upper_bound = self.suffix_bounds(string)
-        return [self.suffixes[i][1]
+        return [self.suffixes[i][0]
                 for i in range(lower_bound, upper_bound + 1)]
 
     def __call__(self, string):
