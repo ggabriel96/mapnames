@@ -147,6 +147,8 @@ def selected_filter():
         return string.SuffixArray
     elif args.filter == 'qg':
         return partial(string.QGramIndex, q=args.q)
+    elif args.filter == 'si':
+        return string.SimpleIndex
 
 
 def selected_metric():
@@ -173,9 +175,13 @@ if __name__ == '__main__':
                            ' that assigns the correct mapping if it is present'
                            ' in the preference lists.'
                            ' Default: %(default)s')
-    argp.add_argument('-f', '--filter', choices=['sa', 'qg'], default='sa',
-                      help='select which filter to use: sa for suffix array'
-                           ' and qg for q-gram index. Default: %(default)s')
+    argp.add_argument('-f', '--filter', choices=['sa', 'qg', 'si'],
+                      default='sa',
+                      help='select which filter to use: sa for suffix array;'
+                           ' qg for q-gram index; or si for simple index,'
+                           ' which uses the same bounds search of sa but just'
+                           ' over a sorted list of the input strings.'
+                           ' Default: %(default)s')
     argp.add_argument('-d', '--distance', choices=['ed', 'qg'], default='qg',
                       help='select which string similarity metric to use:'
                            ' ed for edit distance and qg for q-gram distance.'

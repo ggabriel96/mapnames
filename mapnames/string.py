@@ -328,3 +328,14 @@ class SuffixArray:
 
     def __call__(self, string):
         return self.indices_between_bounds(string)
+
+
+class SimpleIndex(SuffixArray):
+    def __init__(self, strings):
+        super(SimpleIndex, self).__init__(strings)
+
+    def build(self):
+        """ Builds the Simple Index based on saved strings """
+        self.suffixes = [(self.strings[i], i)
+                         for i in range(len(self.strings))]
+        self.suffixes.sort()
