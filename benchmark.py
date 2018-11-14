@@ -1,5 +1,7 @@
 import argparse
+import csv
 import json
+import pprint
 from functools import partial
 from pathlib import Path
 from random import sample, seed
@@ -35,70 +37,63 @@ def report_flow(matcher, json_dict, errs):
           f'        {ortg.SimpleMinCostFlow.BAD_COST_RANGE}: bad cost range')
 
 
-def run_benchmark(json_dict, matcher, filter_class, string_metric):
+def run_benchmark(json_dict, matcher_cls, filter_cls, strdist_cls):
     keys = list(json_dict.keys())
     values = list(json_dict.values())
-    m = matcher(keys, values, filter_class=filter_class)
+    matcher = matcher_cls(keys, values, filter_class=filter_cls)
 
     time_init = time()
-    m.set_prefs(string_metric)
+    matcher.set_prefs(strdist_cls)
     time_end_prefs = time()
-    m.match()
+    matcher.match()
     time_end = time()
 
     prefs_time = time_end_prefs - time_init
     total_time = time_end - time_init
 
-    others = {}
-    acc = m.accuracy(json_dict, opt_dict_out=others)
+    acc_opt = {}
+    acc = matcher.accuracy(json_dict, opt_dict_out=acc_opt)
 
-    errs = others.get('errors', [])
-    if isinstance(m, graph.MinCostFlow):
-        report_flow(m, json_dict, errs)
+    stats = {
+        'size': len(keys),
+        'accuracy': acc,
+        'total_time': total_time,
+        'prefs_time': prefs_time
+    }
 
-    print('Dataset size:', m.n)
-
-    prefs_stats = None
-    if isinstance(m, graph.IncompleteBipartiteMatcher):
-        q1, q2, q3 = m.prefs_qtiles
-        prefs_stats = {
-            'min': int(m.prefs_min),
-            'max': int(m.prefs_max),
-            'mean': float(m.prefs_mean),
-            'std': float(m.prefs_std),
-            'q1': float(q1),
-            'q2': float(q2),
-            'q3': float(q3)
-        }
-        print('Lengths of preferences:\n'
-              f'{args.json} &'
-              f'{prefs_stats["min"]:7} &'
-              f'{prefs_stats["max"]:7} &'
-              f'{prefs_stats["mean"]:7.2f} &'
-              f'{prefs_stats["std"]:7.2f} &'
-              f'{prefs_stats["q1"]:7.2f} &'
-              f'{prefs_stats["q2"]:7.2f} &'
-              f'{prefs_stats["q3"]:7.2f}\\\\')
-
-    unmatched = others.get('unmatched', [])
-    print('Accuracy:', acc)
-    print(f'Unmatched elements: {len(unmatched)} ({len(unmatched) / m.n})')
-    print(f'Mismatched elements: {len(errs)} ({len(errs) / m.n})')
-    print(f'Preferences run time: {prefs_time} seconds'
-          f' ({prefs_time / 60} minutes)')
-    print(f'Total run time: {total_time} seconds'
-          f' ({total_time / 60} minutes)')
+    if isinstance(matcher, graph.IncompleteBipartiteMatcher):
+        q1, q2, q3 = matcher.prefs_qtiles
+        stats['prefs_min'] = int(matcher.prefs_min)
+        stats['prefs_max'] = int(matcher.prefs_max)
+        stats['prefs_mean'] = float(matcher.prefs_mean)
+        stats['prefs_std'] = float(matcher.prefs_std)
+        stats['prefs_q1'] = float(q1)
+        stats['prefs_q2'] = float(q2)
+        stats['prefs_q3'] = float(q3)
 
     return {
-        'total_time': total_time,
-        'preferences_time': prefs_time,
-        'preferences_statistics': prefs_stats,
-        'accuracy': acc
+        'acc_opt': acc_opt,
+        'matcher': matcher,
+        'stats': stats
     }
 
 
+def get_outfile():
+    outdir = Path(args.outdir)
+    if not outdir.exists():
+        outdir.mkdir(parents=True)
+    filename_in = args.json.split('/')[-1]
+    filename_out = f'{args.matcher}_{args.filter}_{args.distance}' \
+        if args.comparison \
+        else filename_in
+    outfile = outdir / f'{filename_out}.csv'
+    return outfile
+
+
 def main():
-    print('Running benchmark with arguments:', args)
+    pprinter = pprint.PrettyPrinter(indent=2)
+    print('\nRunning benchmark with arguments: ', end='')
+    pprinter.pprint(vars(args))
 
     with open(args.json, 'r') as input_json:
         input_dict = json.load(input_json)
@@ -120,39 +115,30 @@ def main():
     results = run_benchmark(input_dict, matcher, filter_class, string_metric)
 
     if args.outdir:
-        acc = results['accuracy']
-        total_time = results['total_time']
-        prefs_stats = results['preferences_statistics']
-
-        outdir = Path(args.outdir)
-        if not outdir.exists():
-            outdir.mkdir(parents=True)
-
-        filename_in = args.json.split('/')[-1]
-        filename_out = f'{args.matcher}_{args.filter}_{args.distance}' \
-            if args.comparison \
-            else filename_in
-        outfile = outdir / f'{filename_out}.csv'
-
-        if args.reset or not outfile.exists():
-            with outfile.open('w') as f:
-                if not args.comparison:
-                    print('matcher,', end='', file=f)
-                print('case,accuracy,time', file=f,
-                      end='\n' if prefs_stats is None else '')
-                if prefs_stats is not None:
-                    for titl in prefs_stats.keys():
-                        print(f',{titl}', file=f, end='')
-                    print(file=f)
+        outfile = get_outfile()
+        print_header = not outfile.exists()
         with outfile.open('a') as f:
-            if not args.comparison:
-                print(f'{args.matcher},', end='', file=f)
-            print(f'{filename_in[:-5]},{acc},{total_time}',
-                  file=f, end='\n' if prefs_stats is None else '')
-            if prefs_stats is not None:
-                for val in prefs_stats.values():
-                    print(f',{val}', file=f, end='')
-                print(file=f)
+            stats = results['stats']
+            stats.update(vars(args))
+            csvw = csv.DictWriter(f, fieldnames=stats.keys())
+            if print_header:
+                csvw.writeheader()
+            csvw.writerow(stats)
+    else:
+        stats = results['stats']
+        others = results['acc_opt']
+        matcher = results['matcher']
+
+        errs = others.get('errors', [])
+        unmatched = others.get('unmatched', [])
+        stats['unmatched'] = len(unmatched) / matcher.n
+        stats['mismatched'] = len(errs) / matcher.n
+
+        if isinstance(matcher, graph.MinCostFlow):
+            report_flow(matcher, input_dict, errs)
+
+        print('stats: ', end='')
+        pprinter.pprint(stats)
 
 
 def selected_matcher():
@@ -230,8 +216,6 @@ if __name__ == '__main__':
                            ' dedicated to the selected matcher instead of'
                            ' given input. Good for comparing different'
                            ' matchers')
-    argp.add_argument('-r', '--reset', action='store_true',
-                      help='reset file before output')
     args = argp.parse_args()
 
     main()
