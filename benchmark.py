@@ -58,13 +58,27 @@ def run_benchmark(json_dict, matcher, filter_class, string_metric):
 
     print('Dataset size:', m.n)
 
+    prefs_stats = None
     if isinstance(m, graph.IncompleteBipartiteMatcher):
+        q1, q2, q3 = m.prefs_qtiles
+        prefs_stats = {
+            'min': int(m.prefs_min),
+            'max': int(m.prefs_max),
+            'mean': float(m.prefs_mean),
+            'std': float(m.prefs_std),
+            'q1': float(q1),
+            'q2': float(q2),
+            'q3': float(q3)
+        }
         print('Lengths of preferences:\n'
-              f'     min: {m.prefs_min}\n'
-              f'     max: {m.prefs_max}\n'
-              f'    mean: {m.prefs_mean}\n'
-              f'  stddev: {m.prefs_std}\n'
-              f'  qtiles: {m.prefs_qtiles}')
+              f'{args.json} &'
+              f'{prefs_stats["min"]:7} &'
+              f'{prefs_stats["max"]:7} &'
+              f'{prefs_stats["mean"]:7.2f} &'
+              f'{prefs_stats["std"]:7.2f} &'
+              f'{prefs_stats["q1"]:7.2f} &'
+              f'{prefs_stats["q2"]:7.2f} &'
+              f'{prefs_stats["q3"]:7.2f}\\\\')
 
     unmatched = others.get('unmatched', [])
     print('Accuracy:', acc)
@@ -78,6 +92,7 @@ def run_benchmark(json_dict, matcher, filter_class, string_metric):
     return {
         'total_time': total_time,
         'preferences_time': prefs_time,
+        'preferences_statistics': prefs_stats,
         'accuracy': acc
     }
 
@@ -107,6 +122,7 @@ def main():
     if args.outdir:
         acc = results['accuracy']
         total_time = results['total_time']
+        prefs_stats = results['preferences_statistics']
 
         outdir = Path(args.outdir)
         if not outdir.exists():
@@ -122,11 +138,21 @@ def main():
             with outfile.open('w') as f:
                 if not args.comparison:
                     print('matcher,', end='', file=f)
-                print('case,accuracy,time', file=f)
+                print('case,accuracy,time', file=f,
+                      end='\n' if prefs_stats is None else '')
+                if prefs_stats is not None:
+                    for titl in prefs_stats.keys():
+                        print(f',{titl}', file=f, end='')
+                    print(file=f)
         with outfile.open('a') as f:
             if not args.comparison:
                 print(f'{args.matcher},', end='', file=f)
-            print(f'{filename_in[:-5]},{acc},{total_time}', file=f)
+            print(f'{filename_in[:-5]},{acc},{total_time}',
+                  file=f, end='\n' if prefs_stats is None else '')
+            if prefs_stats is not None:
+                for val in prefs_stats.values():
+                    print(f',{val}', file=f, end='')
+                print(file=f)
 
 
 def selected_matcher():
