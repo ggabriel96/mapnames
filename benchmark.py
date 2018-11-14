@@ -212,10 +212,11 @@ if __name__ == '__main__':
     argp.add_argument('-o', '--outdir', type=str,
                       help='directory to output time and accuracy as files')
     argp.add_argument('-c', '--comparison', action='store_true',
-                      help='switch output of time and accuracy in a file'
-                           ' dedicated to the selected matcher instead of'
-                           ' given input. Good for comparing different'
-                           ' matchers')
+                      help='if set, output files will be named after'
+                           ' selected matcher, filter and string distance'
+                           ' instead of input filename. Good for comparing'
+                           ' algorithms over datasets instead of'
+                           ' datasets over algorithms.')
     args = argp.parse_args()
 
     main()
