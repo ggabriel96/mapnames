@@ -55,7 +55,14 @@ def run_benchmark(json_dict, matcher_cls, filter_cls, strdist_cls):
     acc = matcher.accuracy(json_dict, opt_dict_out=acc_opt)
 
     stats = {
-        'size': len(keys),
+        'case': args.json.split('/')[-1][:-5],
+        'matcher': args.matcher,
+        'filter': args.filter,
+        'distance': args.distance,
+        'q': args.q,
+        'trim': args.trim,
+        'size': args.size,
+        'seed': args.seed,
         'accuracy': acc,
         'total_time': total_time,
         'prefs_time': prefs_time
@@ -119,7 +126,6 @@ def main():
         print_header = not outfile.exists()
         with outfile.open('a') as f:
             stats = results['stats']
-            stats.update(vars(args))
             csvw = csv.DictWriter(f, fieldnames=stats.keys())
             if print_header:
                 csvw.writeheader()
